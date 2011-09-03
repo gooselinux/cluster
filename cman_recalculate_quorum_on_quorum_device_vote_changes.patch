@@ -1,0 +1,46 @@
+From 657368d7d68eae52db155828e2087bdea51a4417 Mon Sep 17 00:00:00 2001
+From: Lon Hohberger <lhh@redhat.com>
+Date: Wed, 21 Jul 2010 08:58:52 -0400
+Subject: [PATCH] cman: Recalculate quorum on quorum device vote changes
+
+If the quorum device was a functioning member and we
+reconfigure its votes, recalculate quorum.
+
+Resolves: rhbz#606989
+
+Signed-off-by: Lon Hohberger <lhh@redhat.com>
+---
+ cman/daemon/commands.c |    8 ++++++++
+ 1 files changed, 8 insertions(+), 0 deletions(-)
+
+diff --git a/cman/daemon/commands.c b/cman/daemon/commands.c
+index 2f62616..c223a81 100644
+--- a/cman/daemon/commands.c
++++ b/cman/daemon/commands.c
+@@ -1099,6 +1099,7 @@ static int do_cmd_try_shutdown(struct connection *con, char *cmdbuf)
+ static int do_cmd_register_quorum_device(char *cmdbuf, int *retlen)
+ {
+ 	int votes;
++	int oldvotes;
+ 	char *name = cmdbuf+sizeof(int);
+ 
+ 	if (!ais_running)
+@@ -1148,8 +1149,15 @@ static int do_cmd_register_quorum_device(char *cmdbuf, int *retlen)
+ 	}
+ 
+ 	/* Update votes even if it existed before */
++	oldvotes = quorum_device->votes;
+         quorum_device->votes = votes;
+ 
++	/* If it is a member and votes decreased, recalculate quorum */
++	if (quorum_device->state == NODESTATE_MEMBER &&
++	    oldvotes != votes) {
++		recalculate_quorum(1, 0);
++	}
++
+         return 0;
+ }
+ 
+-- 
+1.6.2.5
+

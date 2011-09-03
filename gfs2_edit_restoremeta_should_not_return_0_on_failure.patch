@@ -1,0 +1,29 @@
+From 6571b0c8747f33ec244917bad1720ddab967c185 Mon Sep 17 00:00:00 2001
+From: Bob Peterson <rpeterso@redhat.com>
+Date: Mon, 28 Jun 2010 16:23:58 -0500
+Subject: [PATCH] gfs2_edit restoremeta should not return 0 on failure
+
+The gfs2_edit "restoremeta" function was always returning zero,
+even when the restore was not successful.  This made it difficult
+to automate some gfs2 testing.  This patch makes gfs2_edit return
+the correct result from restoremeta.
+
+rhbz#607321
+---
+ gfs2/edit/savemeta.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/gfs2/edit/savemeta.c b/gfs2/edit/savemeta.c
+index 4f5b3c4..c052acf 100644
+--- a/gfs2/edit/savemeta.c
++++ b/gfs2/edit/savemeta.c
+@@ -909,5 +909,5 @@ void restoremeta(const char *in_fn, const char *out_device,
+ 	if (!printblocksonly)
+ 		close(sbd.device_fd);
+ 
+-	exit(0);
++	exit(error);
+ }
+-- 
+1.6.2.5
+

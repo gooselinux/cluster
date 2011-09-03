@@ -1,0 +1,28 @@
+commit c81bfa93b925788edfbb9fa42fe6112f78826011
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Fri Jul 9 13:20:21 2010 +0200
+
+    cman init defaults: support only xmlconfig loader
+    
+    Product Management Request
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.init.defaults.in b/cman/init.d/cman.init.defaults.in
+index 1f031b8..d5217df 100644
+--- a/cman/init.d/cman.init.defaults.in
++++ b/cman/init.d/cman.init.defaults.in
+@@ -64,13 +64,6 @@
+ # This can be:
+ # xmlconfig       - read directly from cluster.conf and use ricci as default
+ #                   config propagation method. (default)
+-# ldapconfig      - read configuration from an ldap server.
+-#                   Requires: COROSYNC_LDAP_URL or/and COROSYNC_LDAP_BASEDN 
+-#                   envvar to be set.
+-#                   LDAP_BINDDN and LDAP_BINDPWD have to be either both set
+-#                   or both unset.
+-# corosync_parser - use internal corosync config file parser.
+-# openaisparser   - use internal openais config file parser.
+ #CONFIG_LOADER=xmlconfig
+ 
+ # CONFIG_VALIDATION -- select default config validation behaviour

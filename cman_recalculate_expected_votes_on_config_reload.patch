@@ -1,0 +1,49 @@
+From a365c9baa8d424476c8d4967b83ad2acf6627e71 Mon Sep 17 00:00:00 2001
+From: Christine Caulfield <ccaulfie@redhat.com>
+Date: Wed, 23 Jun 2010 10:28:33 +0100
+Subject: [PATCH] cman: Recalculate expected_votes on a config reload.
+
+Add code to recalculate the expected_votes (and therefore quorum)
+when the configuration is reloaded. This means that removing
+a node now properly sets expected_votes down and the cluster
+remains quorate. It will also raise expected_votes if a node is added.
+
+rhbz#606989
+
+Signed-off-by: Christine Caulfield <ccaulfie@redhat.com>
+---
+ cman/daemon/cmanconfig.c |    8 ++++++--
+ 1 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/cman/daemon/cmanconfig.c b/cman/daemon/cmanconfig.c
+index 4a82525..16ef65f 100644
+--- a/cman/daemon/cmanconfig.c
++++ b/cman/daemon/cmanconfig.c
+@@ -45,6 +45,7 @@ int read_cman_nodes(struct corosync_api_v1 *corosync, unsigned int *config_versi
+     int error;
+     unsigned int expected = 0;
+     unsigned int votes = 0;
++    unsigned int total_votes = 0;
+     hdb_handle_t object_handle;
+     hdb_handle_t nodes_handle;
+     hdb_handle_t find_handle;
+@@ -102,11 +103,14 @@ int read_cman_nodes(struct corosync_api_v1 *corosync, unsigned int *config_versi
+ 	    log_printf(LOGSYS_LEVEL_DEBUG, "memb: Got node %s from ccs (id=%d, votes=%d)\n", nodename, this_nodeid, votes);
+ 	    add_ccs_node(nodename, this_nodeid, votes, expected);
+ 	    nodes_handle = nodeslist_next(corosync, find_handle);
++	    total_votes += votes;
+     } while (nodes_handle);
+     corosync->object_find_destroy(find_handle);
+ 
+-    if (expected)
+-	    override_expected(expected);
++    if (!expected)
++	    expected = total_votes;
++
++    override_expected(expected);
+ 
+     remove_unread_nodes();
+     error = 0;
+-- 
+1.6.2.5
+

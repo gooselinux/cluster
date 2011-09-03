@@ -1,0 +1,39 @@
+From 7c4cb96ae94033d2608b65f56e705b2280fcfbaf Mon Sep 17 00:00:00 2001
+From: Federico Simoncelli <federico.simoncelli@gmail.com>
+Date: Thu, 15 Jul 2010 10:37:40 -0400
+Subject: [PATCH] config: Add missing cman_label
+
+According to qdisk manual (and qdiskd source code)
+it is possible to configure the cman_label
+attribute for the quorumd element:
+
+cman_label="mylabel"
+  This overrides the label advertised to CMAN if
+  present.
+
+Although it can not be validated against cluster.rng.
+
+Resolves: rhbz#614356
+
+Signed-off-by: Lon Hohberger <lhh@redhat.com>
+---
+ config/tools/xml/cluster.rng.in |    3 +++
+ 1 files changed, 3 insertions(+), 0 deletions(-)
+
+diff --git a/config/tools/xml/cluster.rng.in b/config/tools/xml/cluster.rng.in
+index dad3191..1e22a52 100644
+--- a/config/tools/xml/cluster.rng.in
++++ b/config/tools/xml/cluster.rng.in
+@@ -280,6 +280,9 @@ To validate your cluster.conf against this schema, run:
+         where the quorum device name differs among nodes. qdisk(5)." rha:sample=""/>
+    </optional>
+    <optional>
++    <attribute name="cman_label" rha:description="" rha:sample=""/>
++   </optional>
++   <optional>
+     <attribute name="status_file" rha:description="Debugging file. qdisk(5)." rha:sample=""/>
+    </optional>
+    <optional>
+-- 
+1.6.2.5
+

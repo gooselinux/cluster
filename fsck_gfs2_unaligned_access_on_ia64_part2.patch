@@ -1,0 +1,29 @@
+commit 3a16ab778ddaa51d52994b615cab1522b938e5af
+Author: Bob Peterson <rpeterso@redhat.com>
+Date:   Tue Jul 27 20:18:18 2010 -0500
+
+    GFS2: libgfs2 bitfit algorithm using wrong shift point
+    
+    This patch fixes a problem specific to 32-bit architectures.
+    The shift point calculation for determining where to start looking
+    for a desired value in the bitmap was wrong because it was
+    using sizeof(unsigned long) rather than sizeof(unsigned long long).
+    That caused the bitfit function to start in the wrong place, which
+    in some circumstances caused the same block to be returned repeatedly
+    which resulted in infinite loops in fsck.gfs2.
+    
+    rhbz#608154
+
+diff --git a/gfs2/libgfs2/fs_bits.c b/gfs2/libgfs2/fs_bits.c
+index 380dd81..c2934a6 100644
+--- a/gfs2/libgfs2/fs_bits.c
++++ b/gfs2/libgfs2/fs_bits.c
+@@ -64,7 +64,7 @@ static inline uint64_t gfs2_bit_search(const unsigned long long *ptr,
+ unsigned long gfs2_bitfit(const unsigned char *buf, const unsigned int len,
+ 			  unsigned long goal, unsigned char state)
+ {
+-	unsigned long spoint = (goal << 1) & ((8 * sizeof(unsigned long)) - 1);
++	unsigned long spoint = (goal << 1) & ((8 * sizeof(unsigned long long)) - 1);
+ 	const unsigned long long *ptr = ((unsigned long long *)buf) + (goal >> 5);
+ 	const unsigned long long *end = (unsigned long long *)
+ 		(buf + ALIGN(len, sizeof(unsigned long long)));

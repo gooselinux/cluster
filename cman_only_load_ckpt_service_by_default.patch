@@ -1,0 +1,137 @@
+commit cae5311a3695e7a6a73e572a9db8e8a5bc148c1d
+Author: Christine Caulfield <ccaulfie@redhat.com>
+Date:   Tue May 11 08:48:26 2010 +0100
+
+    cman: only load ckpt service by default
+    
+    Of all the openais services, cman only uses ckpt. So, in the interests
+    of not loading things we do not support, this patch only loads that service.
+    Other openais services can be loaded by adding stanzas to cluster.conf
+    
+    Product Management Request
+    
+    rhbz#568407
+    
+    Signed-off-by: Christine Caulfield <ccaulfie@redhat.com>
+
+diff --git a/cman/cman_tool/join.c b/cman/cman_tool/join.c
+index 308d19b..c6cf4ef 100644
+--- a/cman/cman_tool/join.c
++++ b/cman/cman_tool/join.c
+@@ -176,13 +176,15 @@ int join(commandline_t *comline, char *main_envp[])
+ 	}
+ 	if (comline->noconfig_opt) {
+ 		envp[envptr++] = strdup("CMAN_NOCONFIG=true");
+-		snprintf(config_modules, sizeof(config_modules), "cmanpreconfig%s",
+-			 comline->noopenais_opt?"":":openaisserviceenablestable");
++		snprintf(config_modules, sizeof(config_modules), "cmanpreconfig");
+ 	}
+ 	else {
+-		snprintf(config_modules, sizeof(config_modules), "%s:cmanpreconfig%s", comline->config_lcrso,
+-			 comline->noopenais_opt?"":":openaisserviceenablestable");
++		snprintf(config_modules, sizeof(config_modules), "%s:cmanpreconfig", comline->config_lcrso);
+ 	}
++	if (comline->noopenais_opt) {
++		envp[envptr++] = strdup("CMAN_NOOPENAIS=true");
++	}
++
+ 	snprintf(scratch, sizeof(scratch), "COROSYNC_DEFAULT_CONFIG_IFACE=%s", config_modules);
+ 	envp[envptr++] = strdup(scratch);
+ 
+@@ -358,7 +360,7 @@ int join(commandline_t *comline, char *main_envp[])
+ 				        strncpy(envname, envvar, PATH_MAX);
+ 					if (equal-envvar < PATH_MAX) {
+ 					    envname[equal-envvar] = '\0';
+-					
++
+ 					    res = confdb_key_create_typed(confdb_handle, object_handle, envname,
+ 									  equal+1, strlen(equal+1),CONFDB_VALUETYPE_STRING);
+ 					}
+diff --git a/cman/daemon/cman-preconfig.c b/cman/daemon/cman-preconfig.c
+index 2352670..fb08e96 100644
+--- a/cman/daemon/cman-preconfig.c
++++ b/cman/daemon/cman-preconfig.c
+@@ -137,6 +137,19 @@ static int ipaddr_equal(struct sockaddr_storage *addr1, struct sockaddr_storage
+ 
+ }
+ 
++/* Adds a service to objdb for the main corosync engine to load */
++static void add_service(struct objdb_iface_ver0 *objdb, const char *name)
++{
++      hdb_handle_t object_handle;
++
++      objdb->object_create(OBJECT_PARENT_HANDLE, &object_handle,
++			   "service", strlen("service"));
++      objdb->object_key_create_typed(object_handle, "name",
++				     name, strlen(name) + 1, OBJDB_VALUETYPE_STRING);
++      objdb->object_key_create_typed(object_handle, "ver",
++				     "0", 2, OBJDB_VALUETYPE_STRING);
++}
++
+ /* Build a localhost ip_address */
+ static int get_localhost(int family, struct sockaddr_storage *localhost)
+ {
+@@ -504,6 +517,9 @@ static int get_env_overrides(void)
+ 		if (debug > 0)
+ 			debug = 1;
+ 	}
++	if (getenv("CMAN_NOOPENAIS")) {
++		disable_openais = 1;
++	}
+ 
+ 	return 0;
+ }
+@@ -599,9 +615,6 @@ static int get_nodename(struct objdb_iface_ver0 *objdb)
+ 		if (!mcast_name)
+ 			return -1;
+ 
+-		/* See if the user wants our default set of openais services (default=yes) */
+-		objdb_get_int(objdb, object_handle, "disable_openais", &disable_openais, 0);
+-
+ 		objdb->object_key_create_typed(object_handle, "nodename",
+ 					       nodename, strlen(nodename)+1, OBJDB_VALUETYPE_STRING);
+ 	}
+@@ -879,12 +892,7 @@ static void add_cman_overrides(struct objdb_iface_ver0 *objdb)
+ 				       "0", 2, OBJDB_VALUETYPE_STRING);
+ 
+ 	/* Make sure we load our alter-ego - the main cman module */
+-	objdb->object_create(OBJECT_PARENT_HANDLE, &object_handle,
+-			     "service", strlen("service"));
+-	objdb->object_key_create_typed(object_handle, "name",
+-				       "corosync_cman", strlen("corosync_cman") + 1, OBJDB_VALUETYPE_STRING);
+-	objdb->object_key_create_typed(object_handle, "ver",
+-				       "0", 2, OBJDB_VALUETYPE_STRING);
++	add_service(objdb, "corosync_cman");
+ 
+ 	/* Define cman as the quorum provider for corosync */
+ 	objdb->object_find_create(OBJECT_PARENT_HANDLE, "quorum", strlen("quorum"), &find_handle);
+@@ -896,6 +904,12 @@ static void add_cman_overrides(struct objdb_iface_ver0 *objdb)
+ 
+ 	objdb->object_key_create_typed(object_handle, "provider",
+ 				       "quorum_cman", strlen("quorum_cman") + 1, OBJDB_VALUETYPE_STRING);
++
++	/* Load openais services we need (unless told not to) */
++	if (!disable_openais) {
++	        add_service(objdb, "openais_ckpt");
++	}
++	
+ }
+ 
+ /* If ccs is not available then use some defaults */
+@@ -1274,6 +1288,16 @@ static void setup_old_compat(struct objdb_iface_ver0 *objdb, hdb_handle_t cluste
+ 		objdb->object_key_create_typed(gfs_handle, plock_ownership,
+ 					       "0", 2, OBJDB_VALUETYPE_STRING);
+ 	}
++
++	/* Load a full set of openais services */
++	if (!disable_openais) {
++	        add_service(objdb, "openais_clm");
++		add_service(objdb, "openais_evt");
++		add_service(objdb, "openais_msg");
++		add_service(objdb, "openais_lck");
++		add_service(objdb, "openais_tmr");
++		/* ckpt is added as part of normal startup */
++	}
+ }
+ 
+ static int cmanpre_readconfig(struct objdb_iface_ver0 *objdb, const char **error_string)

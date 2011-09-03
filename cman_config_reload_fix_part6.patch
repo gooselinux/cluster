@@ -1,0 +1,30 @@
+commit 022dec2be8a81375a5759163ce8d1981d22e6bd3
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Tue Jul 27 10:20:15 2010 +0200
+
+    config: better error report when autodetecting config version errors
+    
+    Resolves: rhbz#617161, rhbz#617163
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/daemon/commands.c b/cman/daemon/commands.c
+index 22ba50a..7a922dd 100644
+--- a/cman/daemon/commands.c
++++ b/cman/daemon/commands.c
+@@ -1190,8 +1190,13 @@ static int reload_config(int new_version, int should_broadcast)
+ 		config_error = read_cman_nodes(corosync, &config_version, 0);
+ 
+ 	if (config_error) {
+-		log_printf(LOG_ERR, "Can't get updated config version %d: %s.\n",
+-			   wanted_config_version, reload_err?reload_err:"version mismatch on this node");
++		if (wanted_config_version) {
++			log_printf(LOG_ERR, "Can't get updated config version %d: %s.\n",
++				   wanted_config_version, reload_err?reload_err:"version mismatch on this node");
++		} else {
++			log_printf(LOG_ERR, "Can't get updated config version: %s.\n",
++				   reload_err?reload_err:"version mismatch on this node");
++		}
+ 
+ 		if (should_broadcast) {
+ 			log_printf(LOG_ERR, "Continuing activity with old configuration\n");

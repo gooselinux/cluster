@@ -1,0 +1,50 @@
+From d1f160b7adc26c41029186d071e4562ffcd98a4b Mon Sep 17 00:00:00 2001
+From: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date: Fri, 16 Jul 2010 11:36:37 +0200
+Subject: [PATCH] cman config: copy all logging objects to the top level tree
+
+Resolves: rhbz#615202
+
+NOTE: this fix also recommends the proposed patch for rhbz#615203
+or in certain configuration cases, corosync will refuse to start.
+Workaround, disable custom logging_daemon options in cluster.conf.
+
+Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ cman/daemon/cman-preconfig.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/cman/daemon/cman-preconfig.c b/cman/daemon/cman-preconfig.c
+index fb08e96..36620c6 100644
+--- a/cman/daemon/cman-preconfig.c
++++ b/cman/daemon/cman-preconfig.c
+@@ -1080,7 +1080,7 @@ static int copy_config_tree(struct objdb_iface_ver0 *objdb, hdb_handle_t source_
+ 	while ( (res = objdb->object_find_next(find_handle, &object_handle) == 0)) {
+ 
+ 		/* Down we go ... */
+-		copy_config_tree(objdb, object_handle, new_object, 0);
++		copy_config_tree(objdb, object_handle, new_object, always_create);
+ 	}
+ 	objdb->object_find_destroy(find_handle);
+ 
+@@ -1188,7 +1188,7 @@ static int cmanpre_reloadconfig(struct objdb_iface_ver0 *objdb, int flush, const
+ 	}
+ 
+ 	/* copy /cluster/logging to /logging */
+-	ret = copy_tree_to_root(objdb, "logging", 0);
++	ret = copy_tree_to_root(objdb, "logging", 1);
+ 
+ 	/* Note: we do NOT delete /totem as corosync stores other things in there that
+ 	   it needs! */
+@@ -1320,7 +1320,7 @@ static int cmanpre_readconfig(struct objdb_iface_ver0 *objdb, const char **error
+ 	else {
+ 		/* Move these to a place where corosync expects to find them */
+ 		ret = copy_tree_to_root(objdb, "totem", 0);
+-		ret = copy_tree_to_root(objdb, "logging", 0);
++		ret = copy_tree_to_root(objdb, "logging", 1);
+ 		ret = copy_tree_to_root(objdb, "event", 0);
+ 		ret = copy_tree_to_root(objdb, "amf", 0);
+ 		ret = copy_tree_to_root(objdb, "aisexec", 0);
+-- 
+1.6.2.5
+

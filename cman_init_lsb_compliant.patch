@@ -1,0 +1,63 @@
+commit 5f5129d0f54fac26b2133afe6f2cad5381fb3114
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Wed Jul 7 12:15:54 2010 +0200
+
+    cman init: more LSB compliance
+    
+    Resolves: rhbz#612097
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index ef0e5ba..9a83c6b 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -485,6 +485,7 @@ start_cman()
+ 		   grep -q Relax-NG $tmpfile ; then
+ 			cat $tmpfile >&2
+ 		fi
++		pidof /usr/sbin/corosync > /var/run/cman.pid
+ 		ret=0
+ 	fi
+ 
+@@ -511,6 +512,7 @@ stop_cman()
+ 			sleep 1
+ 			echo -n "."
+ 		done
++		rm -f /var/run/cman.pid
+ 	fi
+ 	return 0
+ }
+@@ -783,7 +785,19 @@ stop()
+ 
+ cmanstatus()
+ {
+-	errmsg=$( status corosync 2>&1 ) || return $?
++	errmsg=$( status corosync 2>&1 )
++	ret=$?
++	if [ "$ret" != "0" ]; then
++		if [ -f /var/run/cman.pid ]; then
++			errmsg="Found stale pid file"
++			return 1
++		fi
++		if [ -f $LOCK_FILE ]; then
++			errmsg="Found stale lock file"
++			return 2
++		fi
++		return $ret
++	fi
+ 
+ 	if ! cman_running; then
+ 		errmsg="cman is not running"
+@@ -809,6 +823,11 @@ cmanstatus()
+ 
+ rtrn=0
+ 
++if [ "$EUID" != "0" ]; then
++	echo "Only root can execute $0 script"
++	exit 4
++fi
++
+ # See how we were called.
+ case "$1" in
+ start)

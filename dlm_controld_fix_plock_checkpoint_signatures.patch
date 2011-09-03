@@ -1,0 +1,46 @@
+commit 31d140c5924e02e46670365cc1ea9977775bacdd
+Author: David Teigland <teigland@redhat.com>
+Date:   Tue Jul 27 13:50:14 2010 -0500
+
+    dlm_controld: fix plock checkpoint signatures
+    
+    Commit e2ccbf90543cf1d163d1a067bf5a8ce049a9c134 for bz 578625
+    was not correct to use "p_count" (a count of plocks) in the
+    signature calculation.  When plock_ownership is on, the plocks
+    under an owned resource are not copied into the checkpoint.
+    However, the node writing the checkpoint counts all these
+    owned plocks and factors the count into the signature.  The
+    node reading the checkpoint does not get the plocks, so its
+    count of plocks is different, causing the signature calculation
+    to be different.  It will then disable plock operations.
+    It would be very common for this to occur in practice, so the
+    impact is very high.
+    
+    bz 618806
+    
+    Signed-off-by: David Teigland <teigland@redhat.com>
+
+diff --git a/group/dlm_controld/plock.c b/group/dlm_controld/plock.c
+index bf6ddfa..861a39b 100644
+--- a/group/dlm_controld/plock.c
++++ b/group/dlm_controld/plock.c
+@@ -1985,8 +1985,7 @@ void store_plocks(struct lockspace *ls, uint32_t *sig)
+ 		}
+ 	}
+  out:
+-	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^
+-	       r_count ^ p_count;
++	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^ r_count;
+ 
+ 	log_group(ls, "store_plocks first %llu last %llu r_count %u "
+ 		  "p_count %u sig %x",
+@@ -2134,8 +2133,7 @@ void retrieve_plocks(struct lockspace *ls, uint32_t *sig)
+  out:
+ 	saCkptCheckpointClose(h);
+ 
+-	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last)
+-	       ^ r_count ^ p_count;
++	*sig = (0xFFFFFFFF & r_num_first) ^ (0xFFFFFFFF & r_num_last) ^ r_count;
+ 
+ 	log_group(ls, "retrieve_plocks first %llu last %llu r_count %u "
+ 		  "p_count %u sig %x",

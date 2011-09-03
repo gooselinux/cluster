@@ -1,0 +1,31 @@
+commit f7a3fe0e4375d08f545ef6b3f7617295b56373c6
+Author: David Teigland <teigland@redhat.com>
+Date:   Thu May 27 10:29:19 2010 -0500
+
+    dlm_controld: wrong fencing time comparison (2)
+    
+    Slight change to commit 4039bf4817a96b6aab20de948389f43b89ce4a8e
+    to account for the fact that sometimes fenced time can be within
+    a second of fail time.
+    
+    bz 594511
+    
+    Signed-off-by: David Teigland <teigland@redhat.com>
+
+diff --git a/group/dlm_controld/cpg.c b/group/dlm_controld/cpg.c
+index 94a9b68..93cf108 100644
+--- a/group/dlm_controld/cpg.c
++++ b/group/dlm_controld/cpg.c
+@@ -542,7 +542,11 @@ static int check_fencing_done(struct lockspace *ls)
+ 		if (rv < 0)
+ 			log_error("fenced_node_info error %d", rv);
+ 
+-		if (last_fenced_time > node->fail_time) {
++		/* need >= not just > because in at least one case
++		   we've seen fenced_time within the same second as
++		   fail_time: with external fencing, e.g. fence_node */
++
++		if (last_fenced_time >= node->fail_time) {
+ 			log_group(ls, "check_fencing %d done "
+ 				  "add %llu fail %llu last %llu",
+ 				  node->nodeid,

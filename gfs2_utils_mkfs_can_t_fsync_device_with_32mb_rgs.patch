@@ -1,0 +1,53 @@
+From ba3ddbcd0a1123350774e75ac1845c4fae61f697 Mon Sep 17 00:00:00 2001
+From: Bob Peterson <rpeterso@redhat.com>
+Date: Wed, 11 Aug 2010 13:31:14 -0500
+Subject: [PATCH] gfs2-utils: mkfs can't fsync device with 32MB RGs
+
+This patch periodically syncs rgrp data written to a GFS2
+file system during mkfs.gfs2 to circumvent the problem
+described in bug #605322.
+
+rhbz#622844
+---
+ gfs2/libgfs2/rgrp.c |   14 +++++++++++++-
+ 1 files changed, 13 insertions(+), 1 deletions(-)
+
+diff --git a/gfs2/libgfs2/rgrp.c b/gfs2/libgfs2/rgrp.c
+index 8d2d405..d442633 100644
+--- a/gfs2/libgfs2/rgrp.c
++++ b/gfs2/libgfs2/rgrp.c
+@@ -5,6 +5,8 @@
+ 
+ #include "libgfs2.h"
+ 
++#define RG_SYNC_TOLERANCE 1000
++
+ /**
+  * gfs2_compute_bitstructs - Compute the bitmap sizes
+  * @rgd: The resource group descriptor
+@@ -158,11 +160,21 @@ void gfs2_rgrp_relse(struct rgrp_list *rgd)
+ void gfs2_rgrp_free(osi_list_t *rglist)
+ {
+ 	struct rgrp_list *rgd;
++	int rgs_since_sync = 0;
++	struct gfs2_sbd *sdp = NULL;
+ 
+ 	while(!osi_list_empty(rglist->next)){
+ 		rgd = osi_list_entry(rglist->next, struct rgrp_list, list);
+-		if (rgd->bh && rgd->bh[0]) /* if a buffer exists        */
++		if (rgd->bh && rgd->bh[0]) { /* if a buffer exists        */
++			rgs_since_sync++;
++			if (rgs_since_sync >= RG_SYNC_TOLERANCE) {
++				if (!sdp)
++					sdp = rgd->bh[0]->sdp;
++				fsync(sdp->device_fd);
++				rgs_since_sync = 0;
++			}
+ 			gfs2_rgrp_relse(rgd); /* free them all. */
++		}
+ 		if(rgd->bits)
+ 			free(rgd->bits);
+ 		if(rgd->bh) {
+-- 
+1.7.2
+

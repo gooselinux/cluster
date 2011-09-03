@@ -1,0 +1,49 @@
+commit 2dbba8f54346a849a8675c5abf14f39edac42a6f
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Fri Jul 23 16:13:31 2010 +0200
+
+    cman: allow init script to pass options to fenced
+    
+    Use FENCED_OPTS to pass startup options to fenced
+    
+    Resolves: rhbz#617566
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index 9a83c6b..787000f 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -122,6 +122,9 @@ fi
+ #     to join the fence domain (equivalent to "yes").
+ [ -z "$FENCE_JOIN" ] && FENCE_JOIN="yes"
+ 
++# FENCED_OPTS -- allow extra options to be passed to fence daemon.
++[ -z "$FENCED_OPTS" ] && FENCED_OPTS=""
++
+ # NETWORK_BRIDGE_SCRIPT -- script to use for xen network bridging.
+ #     This script must exist in the /etc/xen/scripts directory.
+ #     The default script is "network-bridge".
+@@ -570,7 +573,7 @@ stop_groupd()
+ 
+ start_fenced()
+ {
+-	start_daemon fenced
++	start_daemon fenced "$FENCED_OPTS"
+ }
+ 
+ stop_fenced()
+diff --git a/cman/init.d/cman.init.defaults.in b/cman/init.d/cman.init.defaults.in
+index d5217df..5e70c0e 100644
+--- a/cman/init.d/cman.init.defaults.in
++++ b/cman/init.d/cman.init.defaults.in
+@@ -49,6 +49,9 @@
+ #     to join the fence domain (equivalent to "yes").
+ #FENCE_JOIN="yes"
+ 
++# FENCED_OPTS -- allow extra options to be passed to fence daemon.
++#FENCED_OPTS=""
++
+ # NETWORK_BRIDGE_SCRIPT -- script to use for xen network bridging.
+ #     This script must exist in the /etc/xen/scripts directory.
+ #     The default script is "network-bridge".

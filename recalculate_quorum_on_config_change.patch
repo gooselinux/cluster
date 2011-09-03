@@ -1,0 +1,27 @@
+From 7ef7ad1b3c390981147121bdc55ef13090878688 Mon Sep 17 00:00:00 2001
+From: Lon Hohberger <lhh@redhat.com>
+Date: Fri, 16 Jul 2010 16:44:00 -0400
+Subject: [PATCH] cman: Recalculate quorum on config change
+
+Resolves: rhbz#606989
+
+Signed-off-by: Lon Hohberger <lhh@redhat.com>
+---
+ cman/daemon/commands.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/cman/daemon/commands.c b/cman/daemon/commands.c
+index 2fe4ec9..2f62616 100644
+--- a/cman/daemon/commands.c
++++ b/cman/daemon/commands.c
+@@ -1202,6 +1202,7 @@ static int reread_config(int new_version)
+ 					     ccsd_timer_fn, &ccsd_timer);
+ 	}
+ 	else {
++		recalculate_quorum(1, 0);
+ 		send_transition_msg(0,0);
+ 	}
+ 
+-- 
+1.6.2.5
+

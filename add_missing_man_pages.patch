@@ -1,0 +1,76 @@
+commit bafd8b8cc294c2c1dae9d375f40ec64217fca81d
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Thu May 27 08:32:18 2010 +0200
+
+    add missing man pages
+    
+    rpmdiff automatic check tool found 3 missing man pages.
+    
+    Resolves: rhbz#594111
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/man/Makefile b/cman/man/Makefile
+index 9ed16e9..df20abb 100644
+--- a/cman/man/Makefile
++++ b/cman/man/Makefile
+@@ -4,7 +4,8 @@ MANTARGET= \
+ 	cman_tool.8 \
+ 	qdiskd.8 \
+ 	mkqdisk.8 \
+-	cmannotifyd.8
++	cmannotifyd.8 \
++	cman_notify.8
+ 
+ include ../../make/defines.mk
+ include $(OBJDIR)/make/install.mk
+diff --git a/cman/man/cman_notify.8 b/cman/man/cman_notify.8
+new file mode 100644
+index 0000000..446bf12
+--- /dev/null
++++ b/cman/man/cman_notify.8
+@@ -0,0 +1,17 @@
++.TH "cman_notify" "8" "November 2008" "" "CMAN Notification Daemon"
++.SH "NAME"
++cman_notify \- CMAN Notification Daemon run-part alike script
++.SH "SYNOPSIS"
++\fBcman_notify
++.SH "DESCRIPTION"
++.PP 
++The \fBcmannotifyd\fP daemon talks to CMAN and provides a mechanism to notify
++external entities about cluster changes.
++\fBcman_notify\fP script is in charge to execute all notification scripts
++in a run-part alike way.
++.SH "NOTES"
++\fBcman_notify\fP should never be called standalone except for debugging
++purposes.
++
++.SH "SEE ALSO"
++cmannotifyd(8)
+diff --git a/group/man/Makefile b/group/man/Makefile
+index 70387c3..7fab518 100644
+--- a/group/man/Makefile
++++ b/group/man/Makefile
+@@ -1,6 +1,8 @@
+ MANTARGET= \
+ 	dlm_controld.8 \
++	dlm_controld.pcmk.8 \
+ 	gfs_controld.8 \
++	gfs_controld.pcmk.8 \
+ 	gfs_control.8 \
+ 	group_tool.8 \
+ 	groupd.8
+diff --git a/group/man/dlm_controld.pcmk.8 b/group/man/dlm_controld.pcmk.8
+new file mode 100644
+index 0000000..d69f41b
+--- /dev/null
++++ b/group/man/dlm_controld.pcmk.8
+@@ -0,0 +1 @@
++.so man8/dlm_controld.8
+diff --git a/group/man/gfs_controld.pcmk.8 b/group/man/gfs_controld.pcmk.8
+new file mode 100644
+index 0000000..f305866
+--- /dev/null
++++ b/group/man/gfs_controld.pcmk.8
+@@ -0,0 +1 @@
++.so man8/gfs_controld.8

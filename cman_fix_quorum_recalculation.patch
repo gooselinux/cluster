@@ -1,0 +1,46 @@
+commit f288015025489cb35230c61f82d02c3d70e4a40e
+Author: Christine Caulfield <ccaulfie@redhat.com>
+Date:   Wed May 26 09:51:34 2010 +0100
+
+    cman: fix quorum recalculation when a node is externally killed
+    
+    This patch fixes a condition where quorum would be incorrectly recalculated
+    if a node was removed from the cluster using the cman_kill_node call.
+    This call is used by qdisk and can cause a cluster to continue operating
+    when too few nodes are left in the cluster for a legitimate quorum.
+    
+    rhbz#596046
+    
+    Signed-off-by: Christine Caulfield <ccaulfie@redhat.com>
+
+diff --git a/cman/daemon/commands.c b/cman/daemon/commands.c
+index d50a6e0..2fe4ec9 100644
+--- a/cman/daemon/commands.c
++++ b/cman/daemon/commands.c
+@@ -971,7 +971,7 @@ static int do_cmd_leave_cluster(char *cmdbuf, int *retlen)
+ 	memcpy(&leave_flags, cmdbuf, sizeof(int));
+ 
+ 	/* Ignore the use count if FORCE is set */
+-	if (!(leave_flags & CLUSTER_LEAVEFLAG_FORCE)) {
++	if (!(leave_flags == CLUSTER_LEAVEFLAG_FORCE)) {
+ 		if (use_count)
+ 			return -ENOTCONN;
+ 	}
+@@ -1007,7 +1007,7 @@ static void check_shutdown_status(void)
+ 		    shutdown_flags & SHUTDOWN_ANYWAY) {
+ 			quit_threads = 1;
+ 			if (shutdown_flags & SHUTDOWN_REMOVE)
+-				leaveflags |= CLUSTER_LEAVEFLAG_REMOVED;
++				leaveflags = CLUSTER_LEAVEFLAG_REMOVED;
+ 			send_leave(leaveflags);
+ 			reply = 0;
+ 		}
+@@ -2266,7 +2266,7 @@ void del_ais_node(int nodeid)
+ 		cluster_members--;
+ 
+ 		log_printf(LOGSYS_LEVEL_DEBUG, "memb: del_ais_node %s, leave_reason=%x\n", node->name, node->leave_reason);
+-		if ((node->leave_reason & 0xF) == CLUSTER_LEAVEFLAG_REMOVED)
++		if (node->leave_reason == CLUSTER_LEAVEFLAG_REMOVED)
+ 			recalculate_quorum(1, 1);
+ 		else
+ 			recalculate_quorum(0, 0);

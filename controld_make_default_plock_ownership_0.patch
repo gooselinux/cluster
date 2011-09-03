@@ -1,0 +1,82 @@
+commit 331df4574758f5b98f376bfa1d3df037c85c97e6
+Author: David Teigland <teigland@redhat.com>
+Date:   Tue Jul 27 11:26:22 2010 -0500
+
+    dlm_controld/gfs_controld: make default plock_ownership 0
+    
+    Use the simpler, safer, and more reliable option as default.
+    
+    bz 618303
+    
+    Signed-off-by: David Teigland <teigland@redhat.com>
+
+diff --git a/group/dlm_controld/config.h b/group/dlm_controld/config.h
+index 19a0bf8..18e98fa 100644
+--- a/group/dlm_controld/config.h
++++ b/group/dlm_controld/config.h
+@@ -12,7 +12,7 @@
+ #define DEFAULT_ENABLE_PLOCK 1
+ #define DEFAULT_PLOCK_DEBUG 0
+ #define DEFAULT_PLOCK_RATE_LIMIT 0
+-#define DEFAULT_PLOCK_OWNERSHIP 1
++#define DEFAULT_PLOCK_OWNERSHIP 0
+ #define DEFAULT_DROP_RESOURCES_TIME 10000 /* 10 sec */
+ #define DEFAULT_DROP_RESOURCES_COUNT 10
+ #define DEFAULT_DROP_RESOURCES_AGE 10000 /* 10 sec */
+diff --git a/group/gfs_controld/config.h b/group/gfs_controld/config.h
+index 1330c10..08b9577 100644
+--- a/group/gfs_controld/config.h
++++ b/group/gfs_controld/config.h
+@@ -7,7 +7,7 @@
+ #define DEFAULT_ENABLE_PLOCK 1
+ #define DEFAULT_PLOCK_DEBUG 0
+ #define DEFAULT_PLOCK_RATE_LIMIT 0
+-#define DEFAULT_PLOCK_OWNERSHIP 1
++#define DEFAULT_PLOCK_OWNERSHIP 0
+ #define DEFAULT_DROP_RESOURCES_TIME 10000 /* 10 sec */
+ #define DEFAULT_DROP_RESOURCES_COUNT 10
+ #define DEFAULT_DROP_RESOURCES_AGE 10000 /* 10 sec */
+diff --git a/group/man/dlm_controld.8 b/group/man/dlm_controld.8
+index 7100f0e..3398e42 100644
+--- a/group/man/dlm_controld.8
++++ b/group/man/dlm_controld.8
+@@ -93,7 +93,7 @@ Default 0.
+ .BI \-o " num"
+ Enable (1) or disable (0) plock ownership.
+ .br
+-Default 1.
++Default 0.
+ 
+ .TP
+ .BI \-t " ms"
+@@ -210,7 +210,7 @@ See command line description.
+ .B plock_ownership
+ See command line description.
+ 
+-<dlm plock_ownership="1"/>
++<dlm plock_ownership="0"/>
+ 
+ .TP
+ .B drop_resources_time
+diff --git a/group/man/gfs_controld.8 b/group/man/gfs_controld.8
+index 8e47c89..fd21839 100644
+--- a/group/man/gfs_controld.8
++++ b/group/man/gfs_controld.8
+@@ -87,7 +87,7 @@ Default 0.
+ .BI \-o " num"
+ Enable (1) or disable (0) plock ownership.
+ .br
+-Default 1.
++Default 0.
+ 
+ .TP
+ .BI \-t " ms"
+@@ -148,7 +148,7 @@ See command line description.
+ .B plock_ownership
+ See command line description.
+ 
+-<gfs_controld plock_ownership="1"/>
++<gfs_controld plock_ownership="0"/>
+ 
+ .TP
+ .B drop_resources_time

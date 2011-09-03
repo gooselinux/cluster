@@ -1,0 +1,23 @@
+commit 563749115ce66a9de814642ba9f042e52589e499
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Wed Jan 13 11:35:35 2010 +0100
+
+    cluster: support only xmlconfig loader
+    
+    Product Management Request
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index d13d7c0..6962e2d 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -144,8 +144,6 @@ fi
+ # This can be:
+ # xmlconfig       - read directly from cluster.conf and use ricci as default
+ #                   config propagation method. (default)
+-# corosync_parser - use internal corosync config file parser.
+-# openaisparser   - use internal openais config file parser.
+ [ -n "$CONFIG_LOADER" ] && cman_join_opts+=" -C $CONFIG_LOADER"
+ 
+ # CONFIG_VALIDATION -- select default config validation behaviour

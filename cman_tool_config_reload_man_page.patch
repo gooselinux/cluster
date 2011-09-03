@@ -1,0 +1,28 @@
+commit 495f1f7c141482bbc3e17b038f7f4078fad3f41f
+Author: Christine Caulfield <ccaulfie@redhat.com>
+Date:   Mon Jul 5 15:03:36 2010 +0100
+
+    cman: Mention cman_tool version -S in man page
+    
+    rhbz#609978
+    
+    Signed-off-by: Christine Caulfield <ccaulfie@redhat.com>
+
+diff --git a/cman/man/cman_tool.8 b/cman/man/cman_tool.8
+index ce42bd2..964ab44 100644
+--- a/cman/man/cman_tool.8
++++ b/cman/man/cman_tool.8
+@@ -153,6 +153,13 @@ cman_tool version -r.
+ .TP
+ .I -D<option>
+ see "JOIN" options
++.TP
++.I -S
++By default cman_tool version will try to distribute the new cluster.conf file using
++ricci. If you have distributed the file yourself and/or do not have ricci 
++installed then the -S option will skip this step.
++NOTE: it is still important that all nodes in the cluster have the same version of 
++the file. Make sure that this is the case before using this option.
+ .SH "WAIT" OPTIONS
+ .TP
+ .I -q

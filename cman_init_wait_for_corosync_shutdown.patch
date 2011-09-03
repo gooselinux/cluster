@@ -1,0 +1,33 @@
+commit 67aa7e900364b651aaf0a8b89acbd8157aa551cf
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Sat May 15 07:59:24 2010 +0200
+
+    cman init: wait for corosync daemon to exit on stop
+    
+    corosync could take time to exit after a shutdown/stop process is started.
+    
+    The correct init script behavior is to wait for the daemon to exit.
+    
+    Resolves: rhbz#592103
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index 4578972..ef0e5ba 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -505,7 +505,14 @@ stop_cman()
+ 	if cman_running; then
+ 		errmsg=$( cman_tool $cman_leave_opts -t $CMAN_SHUTDOWN_TIMEOUT \
+ 			-w leave $cmanremove 2>&1 ) || return 1
++		ok
++		echo -n "   Waiting for corosync to shutdown:"
++		while status corosync > /dev/null 2>&1; do
++			sleep 1
++			echo -n "."
++		done
+ 	fi
++	return 0
+ }
+ 
+ start_qdiskd()

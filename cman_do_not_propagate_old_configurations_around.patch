@@ -1,0 +1,175 @@
+From b42898305e61749c915ad2c3c6d66525820ea57b Mon Sep 17 00:00:00 2001
+From: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date: Thu, 5 Aug 2010 16:32:18 +0200
+Subject: [PATCH] cman: do not propagate old configurations around
+
+Add a check in ccs_config_validate to make sure that the new
+configuration we are about to load in the running cluster is newer
+than the running config.
+
+This avoids unnecessary ccs_sync of a bad config around.
+
+Resolves: rhbz#619680
+
+Signed-off-by: Lon Hohberger <lhh@redhat.com>
+Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ cman/cman_tool/main.c                   |   37 +++++++++++++++++++++++++------
+ config/tools/xml/ccs_config_validate.in |   34 +++++++++++++++++++++++++++-
+ 2 files changed, 63 insertions(+), 8 deletions(-)
+
+diff --git a/cman/cman_tool/main.c b/cman/cman_tool/main.c
+index af1cc18..886e6a7 100644
+--- a/cman/cman_tool/main.c
++++ b/cman/cman_tool/main.c
+@@ -649,11 +649,12 @@ static void set_votes(commandline_t *comline)
+ 	cman_finish(h);
+ }
+ 
+-static int validate_config(commandline_t *comline)
++static int validate_config(commandline_t *comline, int current_version)
+ {
+ 	struct stat st;
+ 	char command[PATH_MAX];
+ 	char validator[PATH_MAX];
++	char ccs_quiet[8];
+ 	int cmd_res;
+ 
+ 	/* Look for ccs_config_validate */
+@@ -663,14 +664,26 @@ static int validate_config(commandline_t *comline)
+ 		return 0;
+ 	}
+ 
+-	snprintf(command, sizeof(command), "%s -q", validator);
++	if (comline->verbose > 1) {
++		snprintf(ccs_quiet, sizeof(ccs_quiet), " ");
++	} else {
++		snprintf(ccs_quiet, sizeof(ccs_quiet), "-q");
++	}
++
++	if (current_version) {
++		snprintf(command, sizeof(command), "%s %s -R %d",
++			 validator, ccs_quiet, current_version);
++	} else {
++		snprintf(command, sizeof(command), "%s %s",
++			 validator, ccs_quiet);
++	}
+ 
+ 	if (comline->verbose > 1)
+ 		printf("calling '%s'\n", command);
+ 
+ 	cmd_res = system(command);
+ 
+-	return cmd_res;
++	return WEXITSTATUS(cmd_res);
+ }
+ 
+ /* Here we set the COROSYNC_ variables that might be needed by the corosync
+@@ -759,9 +772,19 @@ static void version(commandline_t *comline)
+ 
+ 		if (comline->verbose)
+ 			printf("Validating configuration\n");
+-		if (validate_config(comline) &&
+-		    comline->config_validate_opt == VALIDATE_FAIL)
+-			die("Not reloading, configuration is not valid\n");
++		result = validate_config(comline, ver.cv_config);
++		if (result == 253)
++			/* Unable to find new config version */
++			die("Unable to retrive the new config version\n");
++		if (result == 254)
++			/* Config regression = fail. */
++			die("Not reloading, config version older or equal the running config");
++		if (result == 255)
++			/* Generic error from ccs_config_validate */
++			die("Not reloading, generic error running ccs_config_validate\n"
++			    "Try re-running with -d options");
++		else if (result && comline->config_validate_opt == VALIDATE_FAIL)
++			die("Not reloading, configuration is not valid");
+ 	}
+ 
+ 	/* We don't bother looking for ccs_sync here - just assume it's in /usr/bin and
+@@ -1176,7 +1199,7 @@ static void do_join(commandline_t *comline, char *envp[])
+ 		if (comline->verbose)
+ 			printf("Validating configuration\n");
+ 
+-		if (validate_config(comline) &&
++		if (validate_config(comline, 0) &&
+ 		    comline->config_validate_opt == VALIDATE_FAIL)
+ 			die("Not joining, configuration is not valid\n");
+ 	}
+diff --git a/config/tools/xml/ccs_config_validate.in b/config/tools/xml/ccs_config_validate.in
+index 55ab4aa..f7d7c04 100644
+--- a/config/tools/xml/ccs_config_validate.in
++++ b/config/tools/xml/ccs_config_validate.in
+@@ -17,6 +17,15 @@ if [ -z "$COROSYNC_DEFAULT_CONFIG_IFACE" ]; then
+ 	export COROSYNC_DEFAULT_CONFIG_IFACE=$CONFIG_LOADER:cmanpreconfig
+ fi
+ 
++get_config_version() {
++	local file=$1
++
++	echo "xpath /cluster/@config_version" | \
++		xmllint --shell "$file" | \
++		grep content | \
++	cut -f2 -d=
++}
++
+ print_usage() {
+ 	echo "Usage:"
+ 	echo ""
+@@ -38,6 +47,8 @@ print_usage() {
+ 	echo "  -t tempfile      Force temporay file to tempfile"
+ 	echo "  -n               Do not remove temporary file"
+ 	echo "  -o               Overwrite temporary file (dangerous)"
++	echo "  -R version       When validating configuration update, ensure the"
++	echo "                   new config is newer than the specified version."
+ }
+ 
+ check_opts() {
+@@ -61,6 +72,10 @@ check_opts() {
+ 		-o)
+ 			overwritetempfile=1
+ 		;;
++		-R)	
++			shift
++			old_version=$1
++		;;
+ 		-C)
+ 			shift
+ 			export COROSYNC_DEFAULT_CONFIG_IFACE=$1:cmanpreconfig
+@@ -131,7 +146,7 @@ lecho()
+ 	return 0
+ }
+ 
+-opts=$(getopt t:hVnC:f:l:rovq $@)
++opts=$(getopt t:hVnC:f:l:rR:ovq $@)
+ if [ "$?" != 0 ]; then
+ 	print_usage >&2
+ 	exit 255
+@@ -174,6 +189,23 @@ xmlout=$(xmllint --noout \
+ 	$tempfile 2>&1)
+ res=$?
+ 
++if [ -n "$old_version" ] && [ $old_version -ne 0 ] && [ $res -eq 0 ]; then
++	new_version=$(get_config_version $tempfile)
++	if [ -z "$new_version" ]; then
++		[ -z "$quiet" ] && \
++			echo "Error: Unable to determine new config version!" >&2
++		[ -z "$notempfilerm" ] && rm -f $tempfile
++		exit 253
++	fi
++	lecho "Old version: $old_version   New version: $new_version"
++	if [ $new_version -le $old_version ]; then
++		[ -z "$quiet" ] && \
++			echo "Error: Configuration version is older than running config!" >&2
++		[ -z "$notempfilerm" ] && rm -f $tempfile
++		exit 254
++	fi
++fi
++
+ if [ -z "$quiet" ] || [ "$res" != "0" ]; then
+ 	echo "$xmlout" | sed \
+ 		-e 's#.*validates$#Configuration validates#g' \
+-- 
+1.7.2
+

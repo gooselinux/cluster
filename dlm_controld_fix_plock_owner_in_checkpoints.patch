@@ -1,0 +1,37 @@
+commit 86ebdb800354b29dc30ec9b72379c7c7e5a8db73
+Author: David Teigland <teigland@redhat.com>
+Date:   Tue Jul 27 14:06:53 2010 -0500
+
+    dlm_controld: fix plock owner in checkpoints
+    
+    The wrong plock resource owner is written into checkpoints
+    when plock_ownership is 0.  This causes a node that mounts
+    the fs to have incorrect owner values, which cause the
+    plock operations to permanently hang.
+    
+    This bug seems to have existed since the plock code was originally
+    copied into dlm_controld from gfs_controld.  As part of the copy,
+    there were some small code changes.  One was to always include the
+    resource owner in the checkpoint data, instead of only including it
+    when plock_ownership was 1.  The owner was then written and read
+    incorrectly when plock_ownership was 0.
+    
+    bz 618814
+    
+    Signed-off-by: David Teigland <teigland@redhat.com>
+
+diff --git a/group/dlm_controld/plock.c b/group/dlm_controld/plock.c
+index 861a39b..d18d1f5 100644
+--- a/group/dlm_controld/plock.c
++++ b/group/dlm_controld/plock.c
+@@ -1924,7 +1924,9 @@ void store_plocks(struct lockspace *ls, uint32_t *sig)
+ 	     (there should be no SYNCING plocks) */
+ 
+ 	list_for_each_entry(r, &ls->plock_resources, list) {
+-		if (r->owner == -1)
++		if (!cfgd_plock_ownership)
++			owner = 0;
++		else if (r->owner == -1)
+ 			continue;
+ 		else if (r->owner == our_nodeid)
+ 			owner = our_nodeid;

@@ -1,0 +1,132 @@
+commit 4039bf4817a96b6aab20de948389f43b89ce4a8e
+Author: David Teigland <teigland@redhat.com>
+Date:   Thu May 20 16:40:20 2010 -0500
+
+    dlm_controld: wrong fencing time comparison
+    
+    dlm_controld checks that a failed node has been fenced by comparing the
+    time it was fenced to the time it properly joined the cpg.  In one of
+    Nate's QE tests, he found a case where the failed node rejoined the cpg
+    just before the fencing time was recorded.  This causes dlm_controld to
+    get stuck waiting for a fencing to occur when it already has.
+    
+    1274304702 dlm:ls:clvmd conf 2 0 1 memb 1 4 join left 3
+    1274304702 clvmd add_change cg 2 remove nodeid 3 reason 3
+    1274304702 clvmd add_change cg 2 counts member 2 joined 0 remove 1 failed 1
+    1274304702 clvmd stop_kernel cg 2
+    1274304702 write "0" to "/sys/kernel/dlm/clvmd/control"
+    1274304702 clvmd check_fencing 3 not fenced add 1274304347 fence 0
+    1274304702 dlm:ls:clvmd conf 1 0 1 memb 1 join left 4
+    1274304702 clvmd add_change cg 3 remove nodeid 4 reason 3
+    1274304702 clvmd add_change cg 3 counts member 1 joined 0 remove 1 failed 1
+    1274304702 clvmd check_fencing 4 not fenced add 1274304347 fence 0
+    ....
+    1274304741 cluster node 3 added
+    ...
+    1274304752 dlm:ls:clvmd conf 2 1 0 memb 1 3 join 3 left
+    1274304752 clvmd add_change cg 4 joined nodeid 3
+    1274304752 clvmd add_change cg 4 counts member 2 joined 1 remove 0 failed 0
+    1274304754 clvmd receive_start 3:1 len 80
+    1274304754 clvmd match_change 3:1 skip 2 sender not member
+    1274304754 clvmd match_change 3:1 skip 3 sender not member
+    1274304754 clvmd match_change 3:1 matches cg 4
+    1274304754 clvmd check_fencing 3 not fenced add 1274304754 fence 1274304753
+    1274304754 clvmd check_fencing 4 1274304347 fenced at 1274304753
+    ...
+    1274304832 dlm:ls:clvmd conf 3 1 0 memb 1 3 4 join 4 left
+    1274304832 clvmd add_change cg 5 joined nodeid 4
+    1274304832 clvmd add_change cg 5 counts member 3 joined 1 remove 0 failed 0
+    1274304832 clvmd receive_start 4:1 len 84
+    1274304832 clvmd match_change 4:1 skip cg 2 created 1274304702 cluster add
+    12743
+    1274304832 clvmd match_change 4:1 skip 3 sender not member
+    1274304832 clvmd match_change 4:1 skip 4 sender not member
+    1274304832 clvmd match_change 4:1 matches cg 5
+    1274304832 clvmd receive_start 3:2 len 84
+    1274304832 clvmd match_change 3:2 skip 2 sender not member
+    1274304832 clvmd match_change 3:2 skip 3 sender not member
+    1274304832 clvmd match_change 3:2 skip 4 already start
+    1274304832 clvmd match_change 3:2 matches cg 5
+    
+    This line: clvmd check_fencing 3 not fenced add 1274304754 fence
+    1274304753 shows that 3 was added to the cpg one second after fenced
+    recorded that fencing was done.  The fenced log confirms that this is when
+    it received the message indicating the 3 was fenced:
+    
+    1274304753 receive_victim_done 1:3 flags 2 len 80
+    1274304753 receive_victim_done 1:3 remove victim 3 time 1274304753 how 2
+    
+    I've not been able to reproduce this, but I believe the fix is for
+    dlm_controld to check that the fencing time is later than the time it saw
+    the node fail instead of later than the time it saw the node most recently
+    join.
+    
+    bz 594511
+    
+    Signed-off-by: David Teigland <teigland@redhat.com>
+
+diff --git a/group/dlm_controld/cpg.c b/group/dlm_controld/cpg.c
+index 2eb3d65..94a9b68 100644
+--- a/group/dlm_controld/cpg.c
++++ b/group/dlm_controld/cpg.c
+@@ -45,6 +45,7 @@ struct node {
+ 	int check_fs;
+ 	int fs_notified;
+ 	uint64_t add_time;
++	uint64_t fail_time;
+ 	uint64_t fence_time;	/* for debug */
+ 	uint64_t cluster_add_time;
+ 	uint64_t cluster_remove_time;
+@@ -356,12 +357,13 @@ static void free_ls(struct lockspace *ls)
+    has failed yet).
+ 
+    So, check that:
+-   1. has fenced fenced the node after it joined this lockspace?
++   1. has fenced fenced the node since we saw it fail?
+    2. fenced has no outstanding fencing ops
+ 
+    For 1:
+-   - record the time of the first good start message we see from node X
+    - node X fails
++   - we see node X fail and X has non-zero add_time,
++     set check_fencing and record the fail time
+    - wait for X to be removed from all dlm cpg's  (probably not necessary)
+    - check that the fencing time is later than the recorded time above
+ 
+@@ -499,6 +501,7 @@ static void node_history_fail(struct lockspace *ls, int nodeid,
+ 		node->check_fencing = 1;
+ 		node->fence_time = 0;
+ 		node->fence_queries = 0;
++		node->fail_time = time(NULL);
+ 	}
+ 
+ 	/* fenced will take care of making sure the quorum value
+@@ -539,10 +542,12 @@ static int check_fencing_done(struct lockspace *ls)
+ 		if (rv < 0)
+ 			log_error("fenced_node_info error %d", rv);
+ 
+-		if (last_fenced_time > node->add_time) {
+-			log_group(ls, "check_fencing %d %llu fenced at %llu",
++		if (last_fenced_time > node->fail_time) {
++			log_group(ls, "check_fencing %d done "
++				  "add %llu fail %llu last %llu",
+ 				  node->nodeid,
+ 				  (unsigned long long)node->add_time,
++				  (unsigned long long)node->fail_time,
+ 				  (unsigned long long)last_fenced_time);
+ 			node->check_fencing = 0;
+ 			node->add_time = 0;
+@@ -550,9 +555,11 @@ static int check_fencing_done(struct lockspace *ls)
+ 		} else {
+ 			if (!node->fence_queries ||
+ 			    node->fence_time != last_fenced_time) {
+-				log_group(ls, "check_fencing %d not fenced "
+-					  "add %llu fence %llu", node->nodeid,
++				log_group(ls, "check_fencing %d wait "
++					  "add %llu fail %llu last %llu",
++					  node->nodeid,
+ 					 (unsigned long long)node->add_time,
++					 (unsigned long long)node->fail_time,
+ 					 (unsigned long long)last_fenced_time);
+ 				node->fence_queries++;
+ 				node->fence_time = last_fenced_time;

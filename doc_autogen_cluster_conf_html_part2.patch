@@ -1,0 +1,24 @@
+commit 7c317e6c049a296ea35d0dfb033a49d973f30db8
+Author: Lon Hohberger <lhh@redhat.com>
+Date:   Fri Jul 9 15:41:21 2010 -0400
+
+    doc: Install cluster.conf reference
+    
+    Resolves: rhbz#593015
+    
+    Signed-off-by: Lon Hohberger <lhh@redhat.com>
+
+diff --git a/doc/Makefile b/doc/Makefile
+index 2aeb0b9..efc83e6 100644
+--- a/doc/Makefile
++++ b/doc/Makefile
+@@ -2,7 +2,8 @@ DOCS =	usage.txt \
+ 	COPYING.applications \
+ 	COPYING.libraries \
+ 	COPYRIGHT \
+-	README.licence
++	README.licence \
++	cluster_conf.html
+ 
+ TARGET= cluster
+ 

@@ -1,0 +1,37 @@
+From df78623ff098681a3e9b9154f4d6e270bf38f121 Mon Sep 17 00:00:00 2001
+From: Lon Hohberger <lhh@redhat.com>
+Date: Thu, 15 Jul 2010 15:57:21 -0400
+Subject: [PATCH] config: Allow multiple logging_daemon tags
+
+Resolves: rhbz#614961
+
+Signed-off-by: Lon Hohberger <lhh@redhat.com>
+---
+ config/tools/xml/cluster.rng.in |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/config/tools/xml/cluster.rng.in b/config/tools/xml/cluster.rng.in
+index 8176f6f..ba5087b 100644
+--- a/config/tools/xml/cluster.rng.in
++++ b/config/tools/xml/cluster.rng.in
+@@ -629,7 +629,7 @@ To validate your cluster.conf against this schema, run:
+         messages in log file. cluster.conf(5)"/>
+    </optional>
+ 
+-   <optional>
++   <zeroOrMore>
+     <element name="logging_daemon" rha:description="Defines
+         daemon-specific logging configuration. cluster.conf(5)">
+ 
+@@ -664,7 +664,7 @@ To validate your cluster.conf against this schema, run:
+      </optional>
+ 
+     </element>
+-   </optional>
++   </zeroOrMore>
+ 
+   </element>
+  </optional>
+-- 
+1.6.2.5
+

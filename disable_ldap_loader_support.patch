@@ -1,0 +1,117 @@
+commit 1a42df2acb9fd11563129da0a7a6e56d1ebb09fd
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Wed Jan 13 11:25:59 2010 +0100
+
+    cluster: disable ldap loader support
+    
+    Product Management Request
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index e0281be..d13d7c0 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -144,11 +144,6 @@ fi
+ # This can be:
+ # xmlconfig       - read directly from cluster.conf and use ricci as default
+ #                   config propagation method. (default)
+-# ldapconfig      - read configuration from an ldap server.
+-#                   Requires: COROSYNC_LDAP_URL or/and COROSYNC_LDAP_BASEDN 
+-#                   envvar to be set.
+-#                   LDAP_BINDDN and LDAP_BINDPWD have to be either both set
+-#                   or both unset.
+ # corosync_parser - use internal corosync config file parser.
+ # openaisparser   - use internal openais config file parser.
+ [ -n "$CONFIG_LOADER" ] && cman_join_opts+=" -C $CONFIG_LOADER"
+@@ -320,28 +315,6 @@ cman_running()
+ cman_checkconfig()
+ {
+ 	case "$CONFIG_LOADER" in
+-	ldapconfig)
+-		if [ -n "$COROSYNC_LDAP_URL" ] || [ -n "$COROSYNC_LDAP_BASEDN" ]; then
+-			if [ -n "$COROSYNC_LDAP_BINDDN" ]; then
+-				if [ -z "$LDAP_BINDPWD" ]; then
+-					errmsg="ldapconfig has been selected \
+-						but LDAP_BINDPWD is not set"
+-					return 1
+-				fi
+-			fi
+-			if [ -n "$LDAP_BINDPWD" ]; then
+-				if [ -z "$COROSYNC_LDAP_BINDDN" ]; then
+-					errmsg="ldapconfig has been selected \
+-						but LDAP_BINDDN is not set"
+-					return 1
+-				fi
+-			fi
+-		else
+-			errmsg="ldapconfig has been selected but neither \
+-				COROSYNC_LDAP_URL or COROSYNC_LDAP_BASEDN have been set"
+-			return 1
+-		fi
+-	;;
+ 	xmlconfig|"")
+ 		configfile=@CONFDIR@/@CONFFILE@
+ 		[ -n "$COROSYNC_CLUSTER_CONFIG_FILE" ] && \
+diff --git a/cman/man/cman_tool.8 b/cman/man/cman_tool.8
+index d45e9e9..ce42bd2 100644
+--- a/cman/man/cman_tool.8
++++ b/cman/man/cman_tool.8
+@@ -281,8 +281,8 @@ have a configuration plugin for it, then you should specify the name of the modu
+ same as the filename) here.
+ .br
+ It is possible to chain configuration modules by separating them with colons. So to
+-add two modules (eg) 'ldapconfig' and 'ldappreproc' to the chain start cman with
+--C ldapconfig:ldappreproc
++add two modules (eg) 'configloader' and 'configpreproc' to the chain start cman with
++-C configloader:configpreproc
+ .br
+ The default value for this is 'xmlconfig'. Note that if the -X is on the command-line
+ then -C will be ignored.
+diff --git a/config/plugins/Makefile b/config/plugins/Makefile
+index d39b807..d79ca04 100644
+--- a/config/plugins/Makefile
++++ b/config/plugins/Makefile
+@@ -1,4 +1,4 @@
+ include ../../make/defines.mk
+ include $(OBJDIR)/make/passthrough.mk
+ 
+-SUBDIRS = xml ldap
++SUBDIRS = xml
+diff --git a/config/tools/Makefile b/config/tools/Makefile
+index e695417..e339f3b 100644
+--- a/config/tools/Makefile
++++ b/config/tools/Makefile
+@@ -1,4 +1,4 @@
+ include ../../make/defines.mk
+ include $(OBJDIR)/make/passthrough.mk
+ 
+-SUBDIRS=ccs_tool ldap xml man
++SUBDIRS=ccs_tool xml man
+diff --git a/config/tools/man/Makefile b/config/tools/man/Makefile
+index 8674f66..4a5398b 100644
+--- a/config/tools/man/Makefile
++++ b/config/tools/man/Makefile
+@@ -1,8 +1,7 @@
+ MANTARGET= \
+ 	ccs_config_dump.8 \
+ 	ccs_config_validate.8 \
+-	ccs_tool.8 \
+-	confdb2ldif.8
++	ccs_tool.8
+ 
+ include ../../../make/defines.mk
+ include $(OBJDIR)/make/install.mk
+diff --git a/config/tools/man/ccs_config_dump.8 b/config/tools/man/ccs_config_dump.8
+index e31d3ce..412aebb 100644
+--- a/config/tools/man/ccs_config_dump.8
++++ b/config/tools/man/ccs_config_dump.8
+@@ -11,7 +11,7 @@ ccs_config_dump \- Tool to generate XML output of running configuration.
+ \fBccs_config_dump\fP is part of the Cluster Configuration System (CCS).
+ It is used to dump the current running configuration in XML format.
+ The running configuration is, sometimes, different from the stored
+-configuration on file or ldap because some subsystems store or set
++configuration on file because some subsystems store or set
+ some default information into the configuration. Those values are
+ generally not present on the on-disk version of the configuration
+ but are required at runtime for the cluster to work properly.

@@ -1,0 +1,145 @@
+commit 0a06aaf5514112f90446d1dc97ada321de419473
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Wed Feb 24 15:10:38 2010 +0100
+
+    cluster: remove fence_xvmd support
+    
+    Product Management Request
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index 6962e2d..4578972 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -397,37 +397,6 @@ fence_join_enabled()
+ 	fi
+ }
+ 
+-check_fence_opt()
+-{
+-	for i in $(getopt dfi:a:p:I:C:U:c:k:u?hLXV $FENCE_XVMD_OPTS); do
+-		[ -$1 = $i ] && return 0
+-	done
+-	return 1
+-}
+-
+-fence_xvmd_standalone()
+-{
+-	check_fence_opt L
+-}
+-
+-fence_xvmd_enabled()
+-{
+-	fence_join_enabled || return 1
+-
+-	#
+-	# Check for presence of /cluster/fence_xvmd in cluster.conf
+-	# (If -X is specified, it doesn't matter if it's in cluster.conf;
+-	#  we'll start it anyway since ccsd is not required)
+-	#
+-	if cman_running && \
+-		! check_fence_opt X; then
+-			ccs_tool query /cluster/fence_xvmd \
+-				> /dev/null 2>&1 || return 1
+-	else
+-		return 1
+-	fi
+-}
+-
+ ### the real stuff starts here
+ 
+ start_global()
+@@ -670,16 +639,6 @@ leave_fence_domain()
+ 	fi
+ }
+ 
+-start_fence_xvmd()
+-{
+-	start_daemon fence_xvmd "$FENCE_XVMD_OPTS"
+-}
+-
+-stop_fence_xvmd()
+-{
+-	stop_daemon fence_xvmd
+-}
+-
+ start()
+ {
+ 	breakpoint="$1"
+@@ -696,12 +655,6 @@ start()
+ 		none \
+ 		"Checking Network Manager"
+ 
+-	runwrap start_fence_xvmd \
+-		fence_xvmd_standalone \
+-		"Starting virtual machine fencing host (standalone)"
+-
+-	fence_xvmd_standalone && exit 0
+-
+ 	runwrap start_global \
+ 		none \
+ 		"Global setup"
+@@ -770,9 +723,6 @@ start()
+ 		fence_join_enabled \
+ 		"Joining fence domain"
+ 
+-	runwrap start_fence_xvmd \
+-		fence_xvmd_enabled \
+-		"Starting virtual machine fencing host"
+ }
+ 
+ stop()
+@@ -783,16 +733,6 @@ stop()
+ 
+ 	echo $echoarg "Stopping cluster: "
+ 
+-	runwrap stop_fence_xvmd \
+-		fence_xvmd_standalone \
+-		"Stopping virtual machine fencing host (standalone)"
+-
+-	fence_xvmd_standalone && exit 0
+-
+-	runwrap stop_fence_xvmd \
+-		fence_xvmd_enabled \
+-		"Stopping virtual machine fencing host"
+-
+ 	runwrap leave_fence_domain \
+ 		fence_join_enabled \
+ 		"Leaving fence domain"
+@@ -836,11 +776,6 @@ stop()
+ 
+ cmanstatus()
+ {
+-	if fence_xvmd_standalone; then
+-		errmsg=$( status fence_xvmd 2>&1 )
+-		return $?
+-	fi
+-
+ 	errmsg=$( status corosync 2>&1 ) || return $?
+ 
+ 	if ! cman_running; then
+@@ -863,10 +798,6 @@ cmanstatus()
+ 	if cmannotifyd_enabled; then
+ 		errmsg=$( status cmannotifyd 2>&1 ) || return $?
+ 	fi
+-
+-	if fence_xvmd_enabled; then
+-		errmsg=$( status fence_xvmd 2>&1 ) || return $?
+-	fi
+ }
+ 
+ rtrn=0
+@@ -904,11 +835,7 @@ status)
+ 	cmanstatus
+ 	rtrn=$?
+ 	if [ "$rtrn" = 0 ]; then
+-		if fence_xvmd_standalone; then
+-			echo "fence_xvmd standalone is running."
+-		else
+-			echo "cluster is running."
+-		fi
++		echo "cluster is running."
+ 	else
+ 		echo -e "$errmsg"
+ 	fi
