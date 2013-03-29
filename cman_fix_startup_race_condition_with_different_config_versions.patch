@@ -1,0 +1,42 @@
+commit 958901888f87a2bd3991e88b8a838ac6809b687a
+Author: Fabio M. Di Nitto <fdinitto@redhat.com>
+Date:   Mon Oct 4 14:24:34 2010 +0200
+
+    cman: fix startup race condition when configs are different across nodes
+    
+    When a node with an old configuration rejoins the cluster, it creates a
+    complex set of race conditions that could lead to severe damage to the
+    cluster.
+    
+    Fix the race condition by aborting immediatly if config versions are different.
+    
+    Resolves: rhbz#639958
+    
+    Signed-off-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+
+diff --git a/cman/daemon/cman.h b/cman/daemon/cman.h
+index af00659..1ec7eca 100644
+--- a/cman/daemon/cman.h
++++ b/cman/daemon/cman.h
+@@ -16,4 +16,4 @@ extern int our_nodeid(void);
+ #define DEFAULT_SHUTDOWN_TIMEOUT 5000
+ #define DEFAULT_CCSD_POLL        1000
+ #define DEFAULT_DISALLOWED       0
+-#define DEFAULT_STARTUP_CONFIG_TIMEOUT 10
++#define DEFAULT_STARTUP_CONFIG_TIMEOUT 0
+diff --git a/cman/init.d/cman.in b/cman/init.d/cman.in
+index 50df96d..e8eba61 100644
+--- a/cman/init.d/cman.in
++++ b/cman/init.d/cman.in
+@@ -479,8 +479,10 @@ start_cman()
+ 		sleep 0.2
+ 	done
+ 
++	sleep 2
++
+ 	if ! cman_running; then
+-		errmsg="$(cat $tmpfile)"
++		errmsg="$(cat $tmpfile) Check cluster logs for details"
+ 		ret=1
+ 	else
+ 		if [ "$CONFIG_VALIDATION" = "WARN" ] && \

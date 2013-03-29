@@ -19,7 +19,7 @@
 Name: cluster
 Summary: Red Hat Cluster
 Version: 3.0.12
-Release: 23%{?alphatag:.%{alphatag}}%{?dist}
+Release: 23%{?alphatag:.%{alphatag}}%{?dist}.4
 License: GPLv2+ and LGPLv2+
 Group: System Environment/Base
 URL: http://sources.redhat.com/cluster/wiki/
@@ -78,6 +78,11 @@ Patch50: cman_do_not_propagate_old_configurations_around.patch
 Patch51: cman_clarify_man_page_on_config_distribution.patch
 Patch52: gfs2_utils_mkfs_can_t_fsync_device_with_32mb_rgs.patch
 Patch53: gfs2_fsck_do_not_delete_directories_if_they_get_too_big.patch
+Patch54: updating_proc_mounts_and_etc_mtab_with_mount_args_for_gfs2_fs.patch
+Patch55: fsck_gfs2_segfaults_if_journals_are_missing.patch
+Patch56: cman_init_fix_stop_remove_ops.patch
+Patch57: cman_fix_calculate_expected_vote_after_leave_remove.patch
+Patch58: cman_fix_startup_race_condition_with_different_config_versions.patch
 
 ## Setup/build bits
 
@@ -150,6 +155,11 @@ ExclusiveArch: i686 x86_64
 %patch51 -p1 -b .cman_clarify_man_page_on_config_distribution
 %patch52 -p1 -b .gfs2_utils_mkfs_can_t_fsync_device_with_32mb_rgs
 %patch53 -p1 -b .gfs2_fsck_do_not_delete_directories_if_they_get_too_big
+%patch54 -p1 -b .updating_proc_mounts_and_etc_mtab_with_mount_args_for_gfs2_fs
+%patch55 -p1 -b .fsck_gfs2_segfaults_if_journals_are_missing
+%patch56 -p1 -b .cman_init_fix_stop_remove_ops
+%patch57 -p1 -b .cman_fix_calculate_expected_vote_after_leave_remove
+%patch58 -p1 -b .cman_fix_startup_race_condition_with_different_config_versions
 
 %build
 ./configure \
@@ -389,6 +399,28 @@ fi
 %{_mandir}/man8/*gfs2*
 
 %changelog
+* Mon Oct  4 2010 Fabio M. Di Nitto <fdinitto@redhat.com> - 3.0.12-23.el6_0.4
+- cman: fix startup race condition when configs are different across nodes
+  (cman_fix_startup_race_condition_with_different_config_versions.patch)
+  Resolves: rhbz#639958
+
+* Fri Oct  1 2010 Fabio M. Di Nitto <fdinitto@redhat.com> - 3.0.12-23.el6_0.3
+- cman init: fix "stop remove" operation
+  (cman_init_fix_stop_remove_ops.patch)
+- cman: Calculate expected_votes correctly after leave remove
+  (cman_fix_calculate_expected_vote_after_leave_remove.patch)
+  Resolves: rhbz#638954
+
+* Mon Sep 27 2010 Lon Hohberger <lhh@redhat.com> - 3.0.12-23.el6_0.2
+- fsck.gfs2 segfaults if journals are missing
+  (fsck_gfs2_segfaults_if_journals_are_missing.patch)
+  Resolves: rhbz#637699
+
+* Thu Sep 23 2010 Lon Hohberger <lhh@redhat.com> - 3.0.12-23.el6_0.1
+- Updating /proc/mounts and /etc/mtab with mount args for GFS2 fs
+  (updating_proc_mounts_and_etc_mtab_with_mount_args_for_gfs2_fs.patch)
+  Resolves: rhbz#634201
+
 * Tue Aug 17 2010 Fabio M. Di Nitto <fdinitto@redhat.com> - 3.0.12-23
 - gfs2-utils: fsck.gfs2 deletes directories if they get too big
   (gfs2_fsck_do_not_delete_directories_if_they_get_too_big.patch)

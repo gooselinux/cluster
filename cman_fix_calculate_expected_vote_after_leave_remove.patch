@@ -1,0 +1,34 @@
+commit 946731a41f7c81b7eab194b8833f2b4846b8fb70
+Author: Christine Caulfield <ccaulfie@redhat.com>
+Date:   Wed Sep 29 12:02:12 2010 +0100
+
+    cman: Calculate expected_votes correctly after leave remove
+    
+    When cman_tool leave_remove happens on one node the flag is not cleared
+    so the same thing happens next time the node just runs "leave". We also
+    need to keep the recalculated expected votes in the local storage too, or it gets lost when the node leaves again.
+    
+    Resolves: rhbz#638954
+    
+    Signed-off-by: Christine Caulfield <ccaulfie@redhat.com>
+
+diff --git a/cman/daemon/commands.c b/cman/daemon/commands.c
+index 7a922dd..d4d9fd9 100644
+--- a/cman/daemon/commands.c
++++ b/cman/daemon/commands.c
+@@ -2034,6 +2034,7 @@ static void do_process_transition(int nodeid, char *data)
+ 
+ 	/* Take into account any new expected_votes value that the new node has */
+ 	node->expected_votes = msg->expected_votes;
++	us->expected_votes = max(us->expected_votes, msg->expected_votes);
+ 
+ 	if (old_state != node->state || old_expected != node->expected_votes)
+ 		recalculate_quorum(0, 0);
+@@ -2246,6 +2247,7 @@ void add_ais_node(int nodeid, uint64_t incar, int total_members)
+ 		gettimeofday(&node->join_time, NULL);
+ 		node->incarnation = incar;
+ 		node->state = NODESTATE_MEMBER;
++		node->leave_reason = 0;
+ 		cluster_members++;
+ 		recalculate_quorum(0, 0);
+ 	}

@@ -1,0 +1,572 @@
+From 11f4e89470e8e239087e80b3f2ce94baf7cbe154 Mon Sep 17 00:00:00 2001
+From: Bob Peterson <rpeterso@redhat.com>
+Date: Wed, 18 Aug 2010 13:06:31 -0500
+Subject: [PATCH] fsck.gfs2 segfaults if journals are missing
+
+This patch makes it possible for fsck.gfs2 to detect missing and damaged
+journals and recreate them.  Previous versions of fsck.gfs2 would
+segfault if journals were missing because it made assumptions about
+the jindex file pointing to a valid dinode.  Also, I moved function
+ji_update which was exclusively used by fsck.gfs2 from libgfs2 to fsck.
+
+rhbz#622576
+---
+ gfs2/convert/gfs2_convert.c |   12 +++--
+ gfs2/fsck/fs_recovery.c     |   55 ++++++++++++++++++++++-
+ gfs2/fsck/fs_recovery.h     |    7 ++-
+ gfs2/fsck/pass1.c           |  104 +++++++++++++++++++++++++++---------------
+ gfs2/libgfs2/libgfs2.h      |    5 +-
+ gfs2/libgfs2/structures.c   |   32 +++++++------
+ gfs2/libgfs2/super.c        |   43 +----------------
+ 7 files changed, 154 insertions(+), 104 deletions(-)
+
+diff --git a/gfs2/convert/gfs2_convert.c b/gfs2/convert/gfs2_convert.c
+index 642d26a..6a754b1 100644
+--- a/gfs2/convert/gfs2_convert.c
++++ b/gfs2/convert/gfs2_convert.c
+@@ -1987,22 +1987,24 @@ static void conv_build_jindex(struct gfs2_sbd *sdp)
+ 	sdp->md.jiinode = createi(sdp->master_dir, "jindex", S_IFDIR | 0700,
+ 				  GFS2_DIF_SYSTEM);
+ 
++	sdp->md.journal = malloc(sdp->md.journals *
++				 sizeof(struct gfs2_inode *));
+ 	for (j = 0; j < sdp->md.journals; j++) {
+ 		char name[256];
+-		struct gfs2_inode *ip;
+ 
+ 		printf("Writing journal #%d...", j + 1);
+ 		fflush(stdout);
+ 		sprintf(name, "journal%u", j);
+-		ip = createi(sdp->md.jiinode, name, S_IFREG | 0600,
+-			     GFS2_DIF_SYSTEM);
+-		write_journal(sdp, ip, j,
++		sdp->md.journal[j] = createi(sdp->md.jiinode, name, S_IFREG |
++					     0600, GFS2_DIF_SYSTEM);
++		write_journal(sdp, j,
+ 			      sdp->jsize << 20 >> sdp->sd_sb.sb_bsize_shift);
+-		inode_put(&ip);
++		inode_put(&sdp->md.journal[j]);
+ 		printf("done.\n");
+ 		fflush(stdout);
+ 	}
+ 
++	free(sdp->md.journal);
+ 	if (sdp->debug) {
+ 		printf("\nJindex:\n");
+ 		gfs2_dinode_print(&sdp->md.jiinode->i_di);
+diff --git a/gfs2/fsck/fs_recovery.c b/gfs2/fsck/fs_recovery.c
+index d908873..07c1552 100644
+--- a/gfs2/fsck/fs_recovery.c
++++ b/gfs2/fsck/fs_recovery.c
+@@ -12,6 +12,8 @@
+ #include "libgfs2.h"
+ #include "util.h"
+ 
++#define JOURNAL_NAME_SIZE 16
++
+ unsigned int sd_found_jblocks = 0, sd_replayed_jblocks = 0;
+ unsigned int sd_found_metablocks = 0, sd_replayed_metablocks = 0;
+ unsigned int sd_found_revokes = 0;
+@@ -540,7 +542,7 @@ out:
+ 	log_info( _("jid=%u: Failed\n"), j);
+ reinit:
+ 	if (query( _("Do you want to clear the journal instead? (y/n)")))
+-		error = write_journal(sdp, sdp->md.journal[j], j,
++		error = write_journal(sdp, j,
+ 				      sdp->md.journal[j]->i_di.di_size /
+ 				      sdp->sd_sb.sb_bsize);
+ 	else
+@@ -569,6 +571,7 @@ int replay_journals(struct gfs2_sbd *sdp, int preen, int force_check,
+ 
+ 	*clean_journals = 0;
+ 
++	sdp->jsize = GFS2_DEFAULT_JSIZE;
+ 	/* Get master dinode */
+ 	gfs2_lookupi(sdp->master_dir, "jindex", 6, &sdp->md.jiinode);
+ 
+@@ -579,7 +582,19 @@ int replay_journals(struct gfs2_sbd *sdp, int preen, int force_check,
+ 	}
+ 
+ 	for(i = 0; i < sdp->md.journals; i++) {
++		if (!sdp->md.journal[i]) {
++			log_err(_("File system journal \"journal%d\" is "
++				  "missing: pass1 will try to recreate it.\n"),
++				i);
++			continue;
++		}
+ 		if (!error) {
++			uint64_t jsize = sdp->md.journal[i]->i_di.di_size /
++				(1024 * 1024);
++
++			if (sdp->jsize == GFS2_DEFAULT_JSIZE && jsize &&
++			    jsize != sdp->jsize)
++				sdp->jsize = jsize;
+ 			error = gfs2_recover_journal(sdp->md.journal[i], i,
+ 						     preen, force_check,
+ 						     &clean);
+@@ -600,3 +615,41 @@ int replay_journals(struct gfs2_sbd *sdp, int preen, int force_check,
+ 	fsync(sdp->device_fd);
+ 	return error;
+ }
++
++/*
++ * ji_update - fill in journal info
++ * sdp: the incore superblock pointer
++ *
++ * Given the inode for the journal index, read in all
++ * the journal inodes.
++ *
++ * Returns: 0 on success, -1 on failure
++ */
++int ji_update(struct gfs2_sbd *sdp)
++{
++	struct gfs2_inode *jip, *ip = sdp->md.jiinode;
++	char journal_name[JOURNAL_NAME_SIZE];
++	int i;
++
++	if(!ip) {
++		log_crit("Journal index inode not found.\n");
++		return -1;
++	}
++
++	if(!(sdp->md.journal = calloc(ip->i_di.di_entries - 2, sizeof(struct gfs2_inode *)))) {
++		log_err("Unable to allocate journal index\n");
++		return -1;
++	}
++	sdp->md.journals = 0;
++	memset(journal_name, 0, sizeof(*journal_name));
++	for(i = 0; i < ip->i_di.di_entries - 2; i++) {
++		/* FIXME check snprintf return code */
++		snprintf(journal_name, JOURNAL_NAME_SIZE, "journal%u", i);
++		gfs2_lookupi(sdp->md.jiinode, journal_name, strlen(journal_name),
++			     &jip);
++		sdp->md.journal[i] = jip;
++	}
++	sdp->md.journals = ip->i_di.di_entries - 2;
++	return 0;
++
++}
+diff --git a/gfs2/fsck/fs_recovery.h b/gfs2/fsck/fs_recovery.h
+index a61884d..1a7aae3 100644
+--- a/gfs2/fsck/fs_recovery.h
++++ b/gfs2/fsck/fs_recovery.h
+@@ -3,9 +3,10 @@
+ 
+ #include "libgfs2.h"
+ 
+-int replay_journals(struct gfs2_sbd *sdp, int preen, int force_check,
+-		    int *clean_journals);
+-int preen_is_safe(struct gfs2_sbd *sdp, int preen, int force_check);
++extern int replay_journals(struct gfs2_sbd *sdp, int preen, int force_check,
++			   int *clean_journals);
++extern int preen_is_safe(struct gfs2_sbd *sdp, int preen, int force_check);
+ 
++extern int ji_update(struct gfs2_sbd *sdp);
+ #endif /* __FS_RECOVERY_H__ */
+ 
+diff --git a/gfs2/fsck/pass1.c b/gfs2/fsck/pass1.c
+index 4fb7abf..17b23df 100644
+--- a/gfs2/fsck/pass1.c
++++ b/gfs2/fsck/pass1.c
+@@ -1174,25 +1174,37 @@ static int handle_di(struct gfs2_sbd *sdp, struct gfs2_buffer_head *bh)
+ 
+ /* Check system inode and verify it's marked "in use" in the bitmap:       */
+ /* Should work for all system inodes: root, master, jindex, per_node, etc. */
+-static int check_system_inode(struct gfs2_inode *sysinode, const char *filename,
+-		       int builder(struct gfs2_sbd *sbp),
+-		       enum gfs2_mark_block mark)
++/* We have to pass the sysinode as ** because the pointer may change out from
++   under the reference by way of the builder() function.  */
++static int check_system_inode(struct gfs2_sbd *sdp,
++			      struct gfs2_inode **sysinode,
++			      const char *filename,
++			      int builder(struct gfs2_sbd *sbp),
++			      enum gfs2_mark_block mark)
+ {
+ 	uint64_t iblock = 0;
+ 	struct dir_status ds = {0};
+ 	int error;
+ 
+ 	log_info( _("Checking system inode '%s'\n"), filename);
+-	if (sysinode) {
++	if (*sysinode) {
+ 		/* Read in the system inode, look at its dentries, and start
+ 		 * reading through them */
+-		iblock = sysinode->i_di.di_num.no_addr;
++		iblock = (*sysinode)->i_di.di_num.no_addr;
+ 		log_info( _("System inode for '%s' is located at block %"
+ 			 PRIu64 " (0x%" PRIx64 ")\n"), filename,
+ 			 iblock, iblock);
+-
+-		/* FIXME: check this block's validity */
+-
++		if (gfs2_check_meta((*sysinode)->i_bh, GFS2_METATYPE_DI)) {
++			log_err( _("Found invalid system dinode at block #"
++				   "%llu (0x%llx)\n"),
++				 (unsigned long long)iblock,
++				 (unsigned long long)iblock);
++			gfs2_blockmap_set(bl, iblock, gfs2_block_free);
++			check_n_fix_bitmap(sdp, iblock, gfs2_block_free);
++			inode_put(sysinode);
++		}
++	}
++	if (*sysinode) {
+ 		ds.q = block_type(iblock);
+ 		/* If the inode exists but the block is marked free, we might
+ 		   be recovering from a corrupt bitmap.  In that case, don't
+@@ -1201,52 +1213,67 @@ static int check_system_inode(struct gfs2_inode *sysinode, const char *filename,
+ 		if (ds.q == gfs2_block_free) {
+ 			log_info( _("The inode exists but the block is not "
+ 				    "marked 'in use'; fixing it.\n"));
+-			fsck_blockmap_set(sysinode,
+-					  sysinode->i_di.di_num.no_addr,
++			fsck_blockmap_set(*sysinode,
++					  (*sysinode)->i_di.di_num.no_addr,
+ 					  filename, mark);
+ 			ds.q = mark;
+ 			if (mark == gfs2_inode_dir)
+-				dirtree_insert(sysinode->i_di.di_num.no_addr);
++				dirtree_insert((*sysinode)->i_di.di_num.no_addr);
+ 		}
+ 	} else
+-		log_info( _("System inode for '%s' is missing.\n"), filename);
++		log_info( _("System inode for '%s' is corrupt or missing.\n"),
++			  filename);
+ 	/* If there are errors with the inode here, we need to create a new
+ 	   inode and get it all setup - of course, everything will be in
+ 	   lost+found then, but we *need* our system inodes before we can
+ 	   do any of that. */
+-	if(!sysinode || ds.q != mark) {
++	if(!(*sysinode) || ds.q != mark) {
+ 		log_err( _("Invalid or missing %s system inode (should be %d, "
+ 			   "is %d).\n"), filename, mark, ds.q);
+ 		if (query(_("Create new %s system inode? (y/n) "), filename)) {
+-			builder(sysinode->i_sbd);
+-			fsck_blockmap_set(sysinode,
+-					  sysinode->i_di.di_num.no_addr,
++			log_err( _("Rebuilding system file \"%s\"\n"),
++				 filename);
++			error = builder(sdp);
++			if (error) {
++				log_err( _("Error trying to rebuild system "
++					   "file %s: Cannot continue\n"),
++					 filename);
++				return error;
++			}
++			fsck_blockmap_set(*sysinode,
++					  (*sysinode)->i_di.di_num.no_addr,
+ 					  filename, mark);
+ 			ds.q = mark;
+ 			if (mark == gfs2_inode_dir)
+-				dirtree_insert(sysinode->i_di.di_num.no_addr);
++				dirtree_insert((*sysinode)->i_di.di_num.no_addr);
+ 		} else {
+ 			log_err( _("Cannot continue without valid %s inode\n"),
+ 				filename);
+ 			return -1;
+ 		}
+ 	}
+-	if (S_ISDIR(sysinode->i_di.di_mode)) {
++	if (S_ISDIR((*sysinode)->i_di.di_mode)) {
+ 		struct block_count bc = {0};
+ 
+ 		sysdir_fxns.private = &bc;
+-		if (sysinode->i_di.di_flags & GFS2_DIF_EXHASH)
+-			check_metatree(sysinode, &sysdir_fxns);
++		if ((*sysinode)->i_di.di_flags & GFS2_DIF_EXHASH)
++			check_metatree(*sysinode, &sysdir_fxns);
+ 		else
+-			check_linear_dir(sysinode, sysinode->i_bh,
++			check_linear_dir(*sysinode, (*sysinode)->i_bh,
+ 					 &sysdir_fxns);
+ 	}
+-	error = handle_ip(sysinode->i_sbd, sysinode);
++	error = handle_ip(sdp, *sysinode);
+ 	return error;
+ }
+ 
+ static int build_a_journal(struct gfs2_sbd *sdp)
+ {
++	char name[256];
++
++	/* First, try to delete the journal if it's in jindex */
++	sprintf(name, "journal%u", sdp->md.journals);
++	gfs2_dirent_del(sdp->md.jiinode, name, strlen(name));
++	/* Now rebuild it */
+ 	build_journal(sdp, sdp->md.journals, sdp->md.jiinode);
+ 	return 0;
+ }
+@@ -1258,43 +1285,43 @@ static int check_system_inodes(struct gfs2_sbd *sdp)
+ 	/*******************************************************************
+ 	 *******  Check the system inode integrity             *************
+ 	 *******************************************************************/
+-	if (check_system_inode(sdp->master_dir, "master", build_master,
++	if (check_system_inode(sdp, &sdp->master_dir, "master", build_master,
+ 			       gfs2_inode_dir)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.rooti, "root", build_root,
++	if (check_system_inode(sdp, &sdp->md.rooti, "root", build_root,
+ 			       gfs2_inode_dir)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.inum, "inum", build_inum,
++	if (check_system_inode(sdp, &sdp->md.inum, "inum", build_inum,
+ 			       gfs2_inode_file)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.statfs, "statfs", build_statfs,
++	if (check_system_inode(sdp, &sdp->md.statfs, "statfs", build_statfs,
+ 			       gfs2_inode_file)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.jiinode, "jindex", build_jindex,
++	if (check_system_inode(sdp, &sdp->md.jiinode, "jindex", build_jindex,
+ 			       gfs2_inode_dir)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.riinode, "rindex", build_rindex,
++	if (check_system_inode(sdp, &sdp->md.riinode, "rindex", build_rindex,
+ 			       gfs2_inode_file)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.qinode, "quota", build_quota,
++	if (check_system_inode(sdp, &sdp->md.qinode, "quota", build_quota,
+ 			       gfs2_inode_file)) {
+ 		stack;
+ 		return -1;
+ 	}
+-	if (check_system_inode(sdp->md.pinode, "per_node", build_per_node,
+-			       gfs2_inode_dir)) {
++	if (check_system_inode(sdp, &sdp->md.pinode, "per_node",
++			       build_per_node, gfs2_inode_dir)) {
+ 		stack;
+ 		return -1;
+ 	}
+@@ -1306,7 +1333,7 @@ static int check_system_inodes(struct gfs2_sbd *sdp)
+ 		char jname[16];
+ 
+ 		sprintf(jname, "journal%d", sdp->md.journals);
+-		if (check_system_inode(sdp->md.journal[sdp->md.journals],
++		if (check_system_inode(sdp, &sdp->md.journal[sdp->md.journals],
+ 				       jname, build_a_journal,
+ 				       gfs2_inode_file)) {
+ 			stack;
+@@ -1399,6 +1426,14 @@ int pass1(struct gfs2_sbd *sbp)
+ 				skip_this_pass = FALSE;
+ 				fflush(stdout);
+ 			}
++			if (fsck_system_inode(sbp, block)) {
++				log_debug(_("Already processed system inode "
++					    "%lld (0x%llx)\n"),
++					  (unsigned long long)block,
++					  (unsigned long long)block);
++				first = 0;
++				continue;
++			}
+ 			bh = bread(sbp, block);
+ 
+ 			/*log_debug( _("Checking metadata block #%" PRIu64
+@@ -1417,11 +1452,6 @@ int pass1(struct gfs2_sbd *sbp)
+ 				}
+ 				check_n_fix_bitmap(sbp, block,
+ 						   gfs2_block_free);
+-			} else if (fsck_system_inode(sbp, block)) {
+-				log_debug(_("Already processed system inode "
+-					    "%lld (0x%llx)\n"),
+-					  (unsigned long long)block,
+-					  (unsigned long long)block);
+ 			} else if (handle_di(sbp, bh) < 0) {
+ 				stack;
+ 				brelse(bh);
+diff --git a/gfs2/libgfs2/libgfs2.h b/gfs2/libgfs2/libgfs2.h
+index 8835a4f..c798bda 100644
+--- a/gfs2/libgfs2/libgfs2.h
++++ b/gfs2/libgfs2/libgfs2.h
+@@ -472,8 +472,8 @@ extern int gfs2_dirent_next(struct gfs2_inode *dip, struct gfs2_buffer_head *bh,
+ extern void build_height(struct gfs2_inode *ip, int height);
+ extern void unstuff_dinode(struct gfs2_inode *ip);
+ extern unsigned int calc_tree_height(struct gfs2_inode *ip, uint64_t size);
+-extern int write_journal(struct gfs2_sbd *sdp, struct gfs2_inode *ip,
+-			 unsigned int j, unsigned int blocks);
++extern int write_journal(struct gfs2_sbd *sdp, unsigned int j,
++			 unsigned int blocks);
+ 
+ /**
+  * device_size - figure out a device's size
+@@ -671,7 +671,6 @@ extern int gfs2_next_rg_metatype(struct gfs2_sbd *sdp, struct rgrp_list *rgd,
+ /* super.c */
+ extern int check_sb(struct gfs2_sb *sb);
+ extern int read_sb(struct gfs2_sbd *sdp);
+-extern int ji_update(struct gfs2_sbd *sdp);
+ extern int rindex_read(struct gfs2_sbd *sdp, int fd, int *count1, int *sane);
+ extern int ri_update(struct gfs2_sbd *sdp, int fd, int *rgcount, int *sane);
+ extern int write_sb(struct gfs2_sbd *sdp);
+diff --git a/gfs2/libgfs2/structures.c b/gfs2/libgfs2/structures.c
+index c288abd..66a5733 100644
+--- a/gfs2/libgfs2/structures.c
++++ b/gfs2/libgfs2/structures.c
+@@ -73,8 +73,7 @@ void build_sb(struct gfs2_sbd *sdp, const unsigned char *uuid)
+ 	}
+ }
+ 
+-int write_journal(struct gfs2_sbd *sdp, struct gfs2_inode *ip, unsigned int j,
+-		  unsigned int blocks)
++int write_journal(struct gfs2_sbd *sdp, unsigned int j, unsigned int blocks)
+ {
+ 	struct gfs2_log_header lh;
+ 	unsigned int x;
+@@ -84,8 +83,9 @@ int write_journal(struct gfs2_sbd *sdp, struct gfs2_inode *ip, unsigned int j,
+ 
+ 	/* Build the height up so our journal blocks will be contiguous and */
+ 	/* not broken up by indirect block pages.                           */
+-	height = calc_tree_height(ip, (blocks + 1) * sdp->bsize);
+-	build_height(ip, height);
++	height = calc_tree_height(sdp->md.journal[j],
++				  (blocks + 1) * sdp->bsize);
++	build_height(sdp->md.journal[j], height);
+ 
+ 	memset(&lh, 0, sizeof(struct gfs2_log_header));
+ 	lh.lh_header.mh_magic = GFS2_MAGIC;
+@@ -94,14 +94,16 @@ int write_journal(struct gfs2_sbd *sdp, struct gfs2_inode *ip, unsigned int j,
+ 	lh.lh_flags = GFS2_LOG_HEAD_UNMOUNT;
+ 
+ 	for (x = 0; x < blocks; x++) {
+-		struct gfs2_buffer_head *bh = get_file_buf(ip, x, TRUE);
++		struct gfs2_buffer_head *bh = get_file_buf(sdp->md.journal[j],
++							   x, TRUE);
+ 		if (!bh)
+ 			return -1;
+ 		bmodified(bh);
+ 		brelse(bh);
+ 	}
+ 	for (x = 0; x < blocks; x++) {
+-		struct gfs2_buffer_head *bh = get_file_buf(ip, x, FALSE);
++		struct gfs2_buffer_head *bh = get_file_buf(sdp->md.journal[j],
++							   x, FALSE);
+ 		if (!bh)
+ 			return -1;
+ 
+@@ -121,7 +123,7 @@ int write_journal(struct gfs2_sbd *sdp, struct gfs2_inode *ip, unsigned int j,
+ 
+ 	if (sdp->debug) {
+ 		printf("\nJournal %u:\n", j);
+-		gfs2_dinode_print(&ip->i_di);
++		gfs2_dinode_print(&sdp->md.journal[j]->i_di);
+ 	}
+ 	return 0;
+ }
+@@ -129,17 +131,14 @@ int write_journal(struct gfs2_sbd *sdp, struct gfs2_inode *ip, unsigned int j,
+ int build_journal(struct gfs2_sbd *sdp, int j, struct gfs2_inode *jindex)
+ {
+ 	char name[256];
+-	struct gfs2_inode *ip;
+ 	int ret;
+ 
+ 	sprintf(name, "journal%u", j);
+-	ip = createi(jindex, name, S_IFREG | 0600, GFS2_DIF_SYSTEM);
+-	ret = write_journal(sdp, ip, j,
++	sdp->md.journal[j] = createi(jindex, name, S_IFREG | 0600,
++				     GFS2_DIF_SYSTEM);
++	ret = write_journal(sdp, j,
+ 			    sdp->jsize << 20 >> sdp->sd_sb.sb_bsize_shift);
+-	if (ret)
+-		return ret;
+-	inode_put(&ip);
+-	return 0;
++	return ret;
+ }
+ 
+ int build_jindex(struct gfs2_sbd *sdp)
+@@ -150,17 +149,20 @@ int build_jindex(struct gfs2_sbd *sdp)
+ 
+ 	jindex = createi(sdp->master_dir, "jindex", S_IFDIR | 0700,
+ 			 GFS2_DIF_SYSTEM);
+-
++	sdp->md.journal = malloc(sdp->md.journals *
++				 sizeof(struct gfs2_inode *));
+ 	for (j = 0; j < sdp->md.journals; j++) {
+ 		ret = build_journal(sdp, j, jindex);
+ 		if (ret)
+ 			return ret;
++		inode_put(&sdp->md.journal[j]);
+ 	}
+ 	if (sdp->debug) {
+ 		printf("\nJindex:\n");
+ 		gfs2_dinode_print(&jindex->i_di);
+ 	}
+ 
++	free(sdp->md.journal);
+ 	inode_put(&jindex);
+ 	return 0;
+ }
+diff --git a/gfs2/libgfs2/super.c b/gfs2/libgfs2/super.c
+index c5b5800..5d232a6 100644
+--- a/gfs2/libgfs2/super.c
++++ b/gfs2/libgfs2/super.c
+@@ -75,6 +75,9 @@ int read_sb(struct gfs2_sbd *sdp)
+ 		(sdp->sd_sb.sb_bsize-sizeof(struct gfs2_meta_header)) /
+ 		sizeof(uint64_t);
+ 	sdp->sd_jbsize = sdp->sd_sb.sb_bsize - sizeof(struct gfs2_meta_header);
++	sdp->sd_hash_bsize = sdp->bsize / 2;
++	sdp->sd_hash_bsize_shift = sdp->sd_sb.sb_bsize_shift - 1;
++	sdp->sd_hash_ptrs = sdp->sd_hash_bsize / sizeof(uint64_t);
+ 	sdp->sd_heightsize[0] = sdp->sd_sb.sb_bsize - sizeof(struct gfs2_dinode);
+ 	sdp->sd_heightsize[1] = sdp->sd_sb.sb_bsize * sdp->sd_diptrs;
+ 	for (x = 2; ; x++){
+@@ -113,46 +116,6 @@ int read_sb(struct gfs2_sbd *sdp)
+ 	return error;
+ }
+ 
+-#define JOURNAL_NAME_SIZE 16
+-
+-/*
+- * ji_update - fill in journal info
+- * sdp: the incore superblock pointer
+- *
+- * Given the inode for the journal index, read in all
+- * the journal inodes.
+- *
+- * Returns: 0 on success, -1 on failure
+- */
+-int ji_update(struct gfs2_sbd *sdp)
+-{
+-	struct gfs2_inode *jip, *ip = sdp->md.jiinode;
+-	char journal_name[JOURNAL_NAME_SIZE];
+-	int i;
+-
+-	if(!ip) {
+-		log_crit("Journal index inode not found.\n");
+-		return -1;
+-	}
+-
+-	if(!(sdp->md.journal = calloc(ip->i_di.di_entries - 2, sizeof(struct gfs2_inode *)))) {
+-		log_err("Unable to allocate journal index\n");
+-		return -1;
+-	}
+-	sdp->md.journals = 0;
+-	memset(journal_name, 0, sizeof(*journal_name));
+-	for(i = 0; i < ip->i_di.di_entries - 2; i++) {
+-		/* FIXME check snprintf return code */
+-		snprintf(journal_name, JOURNAL_NAME_SIZE, "journal%u", i);
+-		gfs2_lookupi(sdp->md.jiinode, journal_name, strlen(journal_name), 
+-					 &jip);
+-		sdp->md.journal[i] = jip;
+-	}
+-	sdp->md.journals = ip->i_di.di_entries - 2;
+-	return 0;
+-
+-}
+-
+ /**
+  * rindex_read - read in the rg index file
+  * @sdp: the incore superblock pointer
+-- 
+1.7.2.2
+

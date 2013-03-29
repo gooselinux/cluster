@@ -1,0 +1,85 @@
+From c4d0ebcd261faa04ea6764b5c96dff27db9c0fd5 Mon Sep 17 00:00:00 2001
+From: Bob Peterson <rpeterso@redhat.com>
+Date: Mon, 13 Sep 2010 12:21:32 -0500
+Subject: [PATCH] Updating /proc/mounts and /etc/mtab with mount args for GFS2 fs
+
+This patch changes the way the gfs2 mount helper, mount.gfs2,
+updates the /etc/mtab file.  Before, it was copying the line
+from /proc/mounts directly into /etc/mtab after a successful
+mount.  The problem is, that may be mapped to a different device
+by the device-mapper layer, which meant it did not match the
+device properly if a subsequent mount was done for the same device.
+This patch uses the device specified on the mount.gfs2 command
+line argument (which normally comes from the mount command), already
+translated properly as it expects for subsequent mount attempts.
+
+rhbz#632595
+---
+ gfs2/mount/mount.gfs2.c |    1 +
+ gfs2/mount/mtab.c       |    2 +-
+ gfs2/mount/util.c       |    4 ++--
+ gfs2/mount/util.h       |    1 +
+ 4 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/gfs2/mount/mount.gfs2.c b/gfs2/mount/mount.gfs2.c
+index 38ec9a1..d8e19a7 100644
+--- a/gfs2/mount/mount.gfs2.c
++++ b/gfs2/mount/mount.gfs2.c
+@@ -86,6 +86,7 @@ static void read_options(int argc, char **argv, struct mount_options *mo)
+ 		if (!real)
+ 			die("invalid device path \"%s\"\n", argv[optind]);
+ 		strncpy(mo->dev, real, PATH_MAX);
++		strncpy(mo->specified_dev, argv[optind], PATH_MAX);
+ 		free(real);
+ 	}
+ 
+diff --git a/gfs2/mount/mtab.c b/gfs2/mount/mtab.c
+index fe5c744..a43d04e 100644
+--- a/gfs2/mount/mtab.c
++++ b/gfs2/mount/mtab.c
+@@ -97,7 +97,7 @@ void add_mtab_entry(struct mount_options *mo)
+ 		return;
+ 	}
+ 
+-	fprintf(file, "%s", mo->proc_entry);
++	fprintf(file, "%s%s", mo->specified_dev, strchr(mo->proc_entry, ' '));
+ 
+ 	fclose(file);
+ 
+diff --git a/gfs2/mount/util.c b/gfs2/mount/util.c
+index bc26daf..5a1f999 100644
+--- a/gfs2/mount/util.c
++++ b/gfs2/mount/util.c
+@@ -209,7 +209,6 @@ static int mnt_unescape(char *dest, size_t len, const char *src)
+ {
+ 	unsigned i = 0, j = 0;
+ 	size_t srclen;
+-	int ret = -1;
+ 
+ 	srclen = strlen(src);
+ 	while (i < srclen) {
+@@ -316,7 +315,8 @@ void read_proc_mounts(struct mount_options *mo)
+ 		strncpy(mo->proc_entry, save_line, PATH_MAX);
+ 	}
+ 
+-	log_debug("read_proc_mounts: device = \"%s\"", mo->dev);
++	log_debug("read_proc_mounts: device = \"%s\"", mo->specified_dev);
++	log_debug("read_proc_mounts: dm device = \"%s\"", mo->dev);
+ 	log_debug("read_proc_mounts: opts = \"%s\"", mo->opts);
+ }
+ 
+diff --git a/gfs2/mount/util.h b/gfs2/mount/util.h
+index 7b856ac..e866cd4 100644
+--- a/gfs2/mount/util.h
++++ b/gfs2/mount/util.h
+@@ -46,6 +46,7 @@ do { \
+ } while (0)
+ 
+ struct mount_options {
++	char specified_dev[PATH_MAX+1];
+ 	char dev[PATH_MAX+1];
+ 	char dir[PATH_MAX+1];
+ 	char opts[PATH_MAX+1];
+-- 
+1.7.2.2
+
