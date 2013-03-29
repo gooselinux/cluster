@@ -19,7 +19,7 @@
 Name: cluster
 Summary: Red Hat Cluster
 Version: 3.0.12
-Release: 23%{?alphatag:.%{alphatag}}%{?dist}.4
+Release: 23%{?alphatag:.%{alphatag}}%{?dist}.6
 License: GPLv2+ and LGPLv2+
 Group: System Environment/Base
 URL: http://sources.redhat.com/cluster/wiki/
@@ -83,6 +83,7 @@ Patch55: fsck_gfs2_segfaults_if_journals_are_missing.patch
 Patch56: cman_init_fix_stop_remove_ops.patch
 Patch57: cman_fix_calculate_expected_vote_after_leave_remove.patch
 Patch58: cman_fix_startup_race_condition_with_different_config_versions.patch
+Patch59: gfs2_convert_corrupts_file_system_when_directory_has_di_height_3.patch
 
 ## Setup/build bits
 
@@ -160,6 +161,7 @@ ExclusiveArch: i686 x86_64
 %patch56 -p1 -b .cman_init_fix_stop_remove_ops
 %patch57 -p1 -b .cman_fix_calculate_expected_vote_after_leave_remove
 %patch58 -p1 -b .cman_fix_startup_race_condition_with_different_config_versions
+%patch59 -p1 -b .gfs2_convert_corrupts_file_system_when_directory_has_di_height_3
 
 %build
 ./configure \
@@ -399,6 +401,11 @@ fi
 %{_mandir}/man8/*gfs2*
 
 %changelog
+* Wed Dec 01 2010 Lon Hohberger <lhh@redhat.com> - Version: 3.0.12-23.el6_0.6
+- gfs2_convert: corrupts file system when directory has di_height 3
+  (gfs2_convert_corrupts_file_system_when_directory_has_di_height_3.patch)
+  Resolves: rhbz#643279
+
 * Mon Oct  4 2010 Fabio M. Di Nitto <fdinitto@redhat.com> - 3.0.12-23.el6_0.4
 - cman: fix startup race condition when configs are different across nodes
   (cman_fix_startup_race_condition_with_different_config_versions.patch)
